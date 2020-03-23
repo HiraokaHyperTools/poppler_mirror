@@ -1,6 +1,6 @@
 /* poppler-form.h: qt interface to poppler
  * Copyright (C) 2007-2008, 2011, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2011, 2012, 2015-2018 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2011, 2012, 2015-2020 Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2011 Carlos Garcia Campos <carlosgc@gnome.org>
  * Copyright (C) 2012, Adam Reichold <adamreichold@myopera.com>
  * Copyright (C) 2016, Hanno Meyer-Thurow <h.mth@web.de>
@@ -8,6 +8,9 @@
  * Copyright (C) 2018, Andre Heinecke <aheinecke@intevation.de>
  * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
  * Copyright (C) 2018 Chinmoy Ranjan Pradhan <chinmoyrp65@protonmail.com>
+ * Copyright (C) 2018, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2019 João Netto <joaonetto901@gmail.com>
+ * Copyright (C) 2020 David García Garzón <voki@canvoki.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,14 +35,15 @@
 #include <Object.h>
 #include <Link.h>
 #include <SignatureInfo.h>
+#include <CertificateInfo.h>
 
 #include "poppler-form.h"
 #include "poppler-page-private.h"
 #include "poppler-private.h"
 #include "poppler-annotation-helper.h"
 
-#include <math.h>
-#include <ctype.h>
+#include <cmath>
+#include <cctype>
 
 #ifdef ENABLE_NSS3
   #include <hasht.h>
@@ -68,16 +72,46 @@ Qt::Alignment formTextAlignment(::FormWidget *fm)
 
 namespace Poppler {
 
-FormField::FormField(FormFieldData &dd)
-  : m_formData(&dd)
+FormFieldIcon::FormFieldIcon(FormFieldIconData *data)
+  : d_ptr(data)
+{
+}
+
+FormFieldIcon::FormFieldIcon(const FormFieldIcon &ffIcon)
+{
+  d_ptr = new FormFieldIconData;
+  d_ptr->icon = ffIcon.d_ptr->icon;
+}
+
+FormFieldIcon& FormFieldIcon::operator=(const FormFieldIcon &ffIcon)
+{
+  if(this != &ffIcon)
+  {  
+    delete d_ptr;
+    d_ptr = nullptr;
+
+    d_ptr = new FormFieldIconData;
+    *d_ptr = *ffIcon.d_ptr;
+  }
+  
+  return *this;
+}
+
+FormFieldIcon::~FormFieldIcon()
+{
+  delete d_ptr;
+}
+
+FormField::FormField(std::unique_ptr<FormFieldData> dd)
+  : m_formData(std::move(dd))
 {
   const int rotation = m_formData->page->getRotate();
   // reading the coords
   double left, top, right, bottom;
   m_formData->fm->getRect(&left, &bottom, &right, &top);
   // build a normalized transform matrix for this page at 100% scale
-  GfxState gfxState( 72.0, 72.0, m_formData->page->getCropBox(), rotation, gTrue );
-  double * gfxCTM = gfxState.getCTM();
+  GfxState gfxState( 72.0, 72.0, m_formData->page->getCropBox(), rotation, true );
+  const double * gfxCTM = gfxState.getCTM();
   double MTX[6];
   double pageWidth = m_formData->page->getCropWidth();
   double pageHeight = m_formData->page->getCropHeight();
@@ -96,11 +130,7 @@ FormField::FormField(FormFieldData &dd)
   m_formData->box = QRectF(topLeft, QSizeF(bottomRight.x() - topLeft.x(), bottomRight.y() - topLeft.y()));
 }
 
-FormField::~FormField()
-{
-  delete m_formData;
-  m_formData = nullptr;
-}
+FormField::~FormField() = default;
 
 QRectF FormField::rect() const
 {
@@ -117,7 +147,7 @@ QString FormField::name() const
   QString name;
   if (const GooString *goo = m_formData->fm->getPartialName())
   {
-    name = QString::fromLatin1(goo->getCString());
+    name = UnicodeParsedString(goo);
   }
   return name;
 }
@@ -144,7 +174,7 @@ QString FormField::uiName() const
   QString name;
   if (const GooString *goo = m_formData->fm->getAlternateUiName())
   {
-    name = QString::fromLatin1(goo->getCString());
+    name = UnicodeParsedString(goo);
   }
   return name;
 }
@@ -166,11 +196,27 @@ bool FormField::isVisible() const
 
 void FormField::setVisible(bool value)
 {
-  Guint flags = m_formData->fm->getWidgetAnnotation()->getFlags();
+  unsigned int flags = m_formData->fm->getWidgetAnnotation()->getFlags();
   if (value) {
     flags &= ~Annot::flagHidden;
   } else {
     flags |= Annot::flagHidden;
+  }
+  m_formData->fm->getWidgetAnnotation()->setFlags(flags);
+}
+
+bool FormField::isPrintable() const
+{
+  return (m_formData->fm->getWidgetAnnotation()->getFlags() & Annot::flagPrint);
+}
+
+void FormField::setPrintable(bool value)
+{
+  unsigned int flags = m_formData->fm->getWidgetAnnotation()->getFlags();
+  if (value) {
+    flags |= Annot::flagPrint;
+  } else {
+    flags &= ~Annot::flagPrint;
   }
   m_formData->fm->getWidgetAnnotation()->setFlags(flags);
 }
@@ -198,9 +244,9 @@ Link *FormField::additionalAction(AdditionalActionType type) const
   }
 
   Link* action = nullptr;
-  if (::LinkAction *act = m_formData->fm->getAdditionalAction(actionType))
+  if (std::unique_ptr<::LinkAction> act = m_formData->fm->getAdditionalAction(actionType))
   {
-    action = PageData::convertLinkActionToLink(act, m_formData->doc, QRectF());
+    action = PageData::convertLinkActionToLink(act.get(), m_formData->doc, QRectF());
   }
   return action;
 }
@@ -216,15 +262,15 @@ Link *FormField::additionalAction(Annotation::AdditionalActionType type) const
   const Annot::AdditionalActionsType actionType = toPopplerAdditionalActionType(type);
 
   Link* action = nullptr;
-  if (::LinkAction *act = w->getAdditionalAction(actionType))
+  if (std::unique_ptr<::LinkAction> act = w->getAdditionalAction(actionType))
   {
-    action = PageData::convertLinkActionToLink(act, m_formData->doc, QRectF());
+    action = PageData::convertLinkActionToLink(act.get(), m_formData->doc, QRectF());
   }
   return action;
 }
 
 FormFieldButton::FormFieldButton(DocumentData *doc, ::Page *p, ::FormWidgetButton *w)
-  : FormField(*new FormFieldData(doc, p, w))
+  : FormField(std::make_unique<FormFieldData>(doc, p, w))
 {
 }
 
@@ -282,6 +328,34 @@ QString FormFieldButton::caption() const
   return ret;
 }
 
+FormFieldIcon FormFieldButton::icon() const
+{
+  FormWidgetButton* fwb = static_cast<FormWidgetButton*>(m_formData->fm);
+  if (fwb->getButtonType() == formButtonPush)
+  {
+    Dict *dict = m_formData->fm->getObj()->getDict();
+    FormFieldIconData *data = new FormFieldIconData;
+    data->icon = dict;
+    return FormFieldIcon(data);
+  }
+  return FormFieldIcon(nullptr);
+}
+
+void FormFieldButton::setIcon(const FormFieldIcon &icon)
+{
+  if(FormFieldIconData::getData( icon ) == nullptr)
+    return;
+
+  FormWidgetButton* fwb = static_cast<FormWidgetButton*>(m_formData->fm);
+  if (fwb->getButtonType() == formButtonPush)
+  {
+    ::AnnotWidget *w = m_formData->fm->getWidgetAnnotation(); 
+    FormFieldIconData *data = FormFieldIconData::getData( icon );
+    if(data->icon != nullptr)
+      w->setNewAppearance(data->icon->lookup("AP"));
+  }
+}
+
 bool FormFieldButton::state() const
 {
   FormWidgetButton* fwb = static_cast<FormWidgetButton*>(m_formData->fm);
@@ -291,7 +365,7 @@ bool FormFieldButton::state() const
 void FormFieldButton::setState( bool state )
 {
   FormWidgetButton* fwb = static_cast<FormWidgetButton*>(m_formData->fm);
-  fwb->setState((GBool)state);
+  fwb->setState((bool)state);
 }
 
 QList<int> FormFieldButton::siblings() const
@@ -317,7 +391,7 @@ QList<int> FormFieldButton::siblings() const
 
 
 FormFieldText::FormFieldText(DocumentData *doc, ::Page *p, ::FormWidgetText *w)
-  : FormField(*new FormFieldData(doc, p, w))
+  : FormField(std::make_unique<FormFieldData>(doc, p, w))
 {
 }
 
@@ -351,6 +425,14 @@ void FormFieldText::setText( const QString& text )
   FormWidgetText* fwt = static_cast<FormWidgetText*>(m_formData->fm);
   GooString * goo = QStringToUnicodeGooString( text );
   fwt->setContent( goo );
+  delete goo;
+}
+
+void FormFieldText::setAppearanceText( const QString& text )
+{
+  FormWidgetText* fwt = static_cast<FormWidgetText*>(m_formData->fm);
+  GooString * goo = QStringToUnicodeGooString( text );
+  fwt->setAppearanceContent( goo );
   delete goo;
 }
 
@@ -397,7 +479,7 @@ void FormFieldText::setFontSize(int fontSize)
 }
 
 FormFieldChoice::FormFieldChoice(DocumentData *doc, ::Page *p, ::FormWidgetChoice *w)
-  : FormField(*new FormFieldData(doc, p, w))
+  : FormField(std::make_unique<FormFieldData>(doc, p, w))
 {
 }
 
@@ -427,6 +509,22 @@ QStringList FormFieldChoice::choices() const
   for (int i = 0; i < num; ++i)
   {
     ret.append(UnicodeParsedString(fwc->getChoice(i)));
+  }
+  return ret;
+}
+
+QVector<QPair<QString,QString>> FormFieldChoice::choicesWithExportValues() const
+{
+  FormWidgetChoice* fwc = static_cast<FormWidgetChoice*>(m_formData->fm);
+  QVector<QPair<QString, QString>> ret;
+  const int num = fwc->getNumChoices();
+  ret.reserve(num);
+  for (int i = 0; i < num; ++i)
+  {
+    const QString display = UnicodeParsedString(fwc->getChoice(i));
+    const GooString *exportValueG = fwc->getExportVal(i);
+    const QString exportValue = exportValueG ? UnicodeParsedString(exportValueG) : display;
+    ret.append({display, exportValue});
   }
   return ret;
 }
@@ -495,10 +593,193 @@ bool FormFieldChoice::canBeSpellChecked() const
   return !fwc->noSpellCheck();
 }
 
+class CertificateInfoPrivate
+{
+public:
+  struct EntityInfo
+  {
+    QString common_name;
+    QString email_address;
+    QString org_name;
+    QString distinguished_name;
+  };
 
-struct SignatureValidationInfoPrivate {
+  EntityInfo issuer_info;
+  EntityInfo subject_info;
+  QByteArray certificate_der;
+  QByteArray serial_number;
+  QByteArray public_key;
+  QDateTime validity_start;
+  QDateTime validity_end;
+  int public_key_type;
+  int public_key_strength;
+  int ku_extensions;
+  int version;
+  bool is_self_signed;
+  bool is_null;
+};
+
+CertificateInfo::CertificateInfo(CertificateInfoPrivate* priv)
+  : d_ptr( priv )
+{
+}
+
+CertificateInfo::CertificateInfo(const CertificateInfo &other)
+ : d_ptr( other.d_ptr )
+{
+}
+
+CertificateInfo::~CertificateInfo() = default;
+
+CertificateInfo &CertificateInfo::operator=(const CertificateInfo &other)
+{
+  if ( this != &other )
+    d_ptr = other.d_ptr;
+
+  return *this;
+}
+
+bool CertificateInfo::isNull() const
+{
+  Q_D(const CertificateInfo);
+  return d->is_null;
+}
+
+int CertificateInfo::version() const
+{
+  Q_D(const CertificateInfo);
+  return d->version;
+}
+
+QByteArray CertificateInfo::serialNumber() const
+{
+  Q_D(const CertificateInfo);
+  return d->serial_number;
+}
+
+QString CertificateInfo::issuerInfo(EntityInfoKey key) const
+{
+  Q_D(const CertificateInfo);
+  switch (key)
+  {
+    case CommonName:
+      return d->issuer_info.common_name;
+    case DistinguishedName:
+      return d->issuer_info.distinguished_name;
+    case EmailAddress:
+      return d->issuer_info.email_address;
+    case Organization:
+      return d->issuer_info.org_name;
+    default:
+      return QString();
+  }
+}
+
+QString CertificateInfo::subjectInfo(EntityInfoKey key) const
+{
+  Q_D(const CertificateInfo);
+  switch (key)
+  {
+    case CommonName:
+      return d->subject_info.common_name;
+    case DistinguishedName:
+      return d->subject_info.distinguished_name;
+    case EmailAddress:
+      return d->subject_info.email_address;
+    case Organization:
+      return d->subject_info.org_name;
+    default:
+      return QString();
+  }
+}
+
+QDateTime CertificateInfo::validityStart() const
+{
+  Q_D(const CertificateInfo);
+  return d->validity_start;
+}
+
+QDateTime CertificateInfo::validityEnd() const
+{
+  Q_D(const CertificateInfo);
+  return d->validity_end;
+}
+
+CertificateInfo::KeyUsageExtensions CertificateInfo::keyUsageExtensions() const
+{
+  Q_D(const CertificateInfo);
+
+  KeyUsageExtensions kuExtensions = KuNone;
+  if (d->ku_extensions & KU_DIGITAL_SIGNATURE)
+    kuExtensions |= KuDigitalSignature;
+  if (d->ku_extensions & KU_NON_REPUDIATION)
+    kuExtensions |= KuNonRepudiation;
+  if (d->ku_extensions & KU_KEY_ENCIPHERMENT)
+    kuExtensions |= KuKeyEncipherment;
+  if (d->ku_extensions & KU_DATA_ENCIPHERMENT)
+    kuExtensions |= KuDataEncipherment;
+  if (d->ku_extensions & KU_KEY_AGREEMENT)
+    kuExtensions |= KuKeyAgreement;
+  if (d->ku_extensions & KU_KEY_CERT_SIGN)
+    kuExtensions |= KuKeyCertSign;
+  if (d->ku_extensions & KU_CRL_SIGN)
+    kuExtensions |= KuClrSign;
+  if (d->ku_extensions & KU_ENCIPHER_ONLY)
+    kuExtensions |= KuEncipherOnly;
+
+  return kuExtensions;
+}
+
+QByteArray CertificateInfo::publicKey() const
+{
+  Q_D(const CertificateInfo);
+  return d->public_key;
+}
+
+CertificateInfo::PublicKeyType CertificateInfo::publicKeyType() const
+{
+  Q_D(const CertificateInfo);
+  switch (d->public_key_type)
+  {
+    case RSAKEY:
+      return RsaKey;
+    case DSAKEY:
+      return DsaKey;
+    case ECKEY:
+      return EcKey;
+    default:
+      return OtherKey;
+  }
+}
+
+int CertificateInfo::publicKeyStrength() const
+{
+  Q_D(const CertificateInfo);
+  return d->public_key_strength;
+}
+
+bool CertificateInfo::isSelfSigned() const
+{
+  Q_D(const CertificateInfo);
+  return d->is_self_signed;
+}
+
+QByteArray CertificateInfo::certificateData() const
+{
+  Q_D(const CertificateInfo);
+  return d->certificate_der;
+}
+
+class SignatureValidationInfoPrivate {
+public:
+	SignatureValidationInfoPrivate(CertificateInfo &&ci)
+		: cert_info(ci)
+	{
+	}
+
 	SignatureValidationInfo::SignatureStatus signature_status;
 	SignatureValidationInfo::CertificateStatus certificate_status;
+	CertificateInfo cert_info;
 
 	QByteArray signature;
 	QString signer_name;
@@ -564,9 +845,9 @@ QString SignatureValidationInfo::reason() const
 
 SignatureValidationInfo::HashAlgorithm SignatureValidationInfo::hashAlgorithm() const
 {
+#ifdef ENABLE_NSS3
   Q_D(const SignatureValidationInfo);
 
-#ifdef ENABLE_NSS3
   switch (d->hash_algorithm)
   {
     case HASH_AlgMD2:
@@ -627,6 +908,12 @@ bool SignatureValidationInfo::signsTotalDocument() const
   return false;
 }
 
+CertificateInfo SignatureValidationInfo::certificateInfo() const
+{
+  Q_D(const SignatureValidationInfo);
+  return d->cert_info;
+}
+
 SignatureValidationInfo &SignatureValidationInfo::operator=(const SignatureValidationInfo &other)
 {
   if ( this != &other )
@@ -636,7 +923,7 @@ SignatureValidationInfo &SignatureValidationInfo::operator=(const SignatureValid
 }
 
 FormFieldSignature::FormFieldSignature(DocumentData *doc, ::Page *p, ::FormWidgetSignature *w)
-  : FormField(*new FormFieldData(doc, p, w))
+  : FormField(std::make_unique<FormFieldData>(doc, p, w))
 {
 }
 
@@ -678,7 +965,47 @@ SignatureValidationInfo FormFieldSignature::validate(int opt, const QDateTime& v
   FormWidgetSignature* fws = static_cast<FormWidgetSignature*>(m_formData->fm);
   const time_t validationTimeT = validationTime.isValid() ? validationTime.toTime_t() : -1;
   SignatureInfo* si = fws->validateSignature(opt & ValidateVerifyCertificate, opt & ValidateForceRevalidation, validationTimeT);
-  SignatureValidationInfoPrivate* priv = new SignatureValidationInfoPrivate;
+
+  // get certificate info
+  const X509CertificateInfo *ci = si->getCertificateInfo();
+  CertificateInfoPrivate* certPriv = new CertificateInfoPrivate;
+  certPriv->is_null = true;
+  if (ci)
+  {
+    certPriv->version = ci->getVersion();
+    certPriv->ku_extensions = ci->getKeyUsageExtensions();
+
+    const GooString &certSerial = ci->getSerialNumber();
+    certPriv->serial_number = QByteArray(certSerial.c_str(), certSerial.getLength());
+
+    const X509CertificateInfo::EntityInfo &issuerInfo = ci->getIssuerInfo();
+    certPriv->issuer_info.common_name = issuerInfo.commonName.c_str();
+    certPriv->issuer_info.distinguished_name = issuerInfo.distinguishedName.c_str();
+    certPriv->issuer_info.email_address = issuerInfo.email.c_str();
+    certPriv->issuer_info.org_name = issuerInfo.organization.c_str();
+
+    const X509CertificateInfo::EntityInfo &subjectInfo = ci->getSubjectInfo();
+    certPriv->subject_info.common_name = subjectInfo.commonName.c_str();
+    certPriv->subject_info.distinguished_name = subjectInfo.distinguishedName.c_str();
+    certPriv->subject_info.email_address = subjectInfo.email.c_str();
+    certPriv->subject_info.org_name = subjectInfo.organization.c_str();
+
+    X509CertificateInfo::Validity certValidity = ci->getValidity();
+    certPriv->validity_start = QDateTime::fromTime_t(certValidity.notBefore, Qt::UTC);
+    certPriv->validity_end = QDateTime::fromTime_t(certValidity.notAfter, Qt::UTC);
+
+    const X509CertificateInfo::PublicKeyInfo &pkInfo = ci->getPublicKeyInfo();
+    certPriv->public_key = QByteArray(pkInfo.publicKey.c_str(), pkInfo.publicKey.getLength());
+    certPriv->public_key_type = static_cast<int>(pkInfo.publicKeyType);
+    certPriv->public_key_strength = pkInfo.publicKeyStrength;
+
+    const GooString &certDer = ci->getCertificateDER();
+    certPriv->certificate_der = QByteArray(certDer.c_str(), certDer.getLength());
+
+    certPriv->is_null = false;
+  }
+
+  SignatureValidationInfoPrivate* priv = new SignatureValidationInfoPrivate(CertificateInfo(certPriv));
   switch (si->getSignatureValStatus()) {
     case SIGNATURE_VALID:
       priv->signature_status = SignatureValidationInfo::SignatureValid;
@@ -745,7 +1072,7 @@ SignatureValidationInfo FormFieldSignature::validate(int opt, const QDateTime& v
   GooString* checkedSignature = fws->getCheckedSignature(&priv->docLength);
   if (priv->range_bounds.size() == 4 && checkedSignature)
   {
-    priv->signature = QByteArray::fromHex(checkedSignature->getCString());
+    priv->signature = QByteArray::fromHex(checkedSignature->c_str());
   }
   delete checkedSignature;
 

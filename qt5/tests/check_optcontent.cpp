@@ -4,10 +4,13 @@
 #include "GlobalParams.h"
 
 #include <poppler-qt5.h>
+#include <poppler-optcontent-private.h>
 
 class TestOptionalContent: public QObject
 {
     Q_OBJECT
+public:
+    TestOptionalContent(QObject *parent = nullptr) : QObject(parent) { }
 private slots:
     void checkVisPolicy();
     void checkNestedLayers();
@@ -28,10 +31,10 @@ void TestOptionalContent::checkVisPolicy()
     Poppler::OptContentModel *optContent = doc->optionalContentModel();
     QModelIndex index;
     index = optContent->index( 0, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "A" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "A" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Checked );
     index = optContent->index( 1, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "B" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "B" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Checked );
 
     delete doc;
@@ -49,24 +52,24 @@ void TestOptionalContent::checkNestedLayers()
     QModelIndex index;
 
     index = optContent->index( 0, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "Black Text and Green Snow" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "Black Text and Green Snow" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
 
     index = optContent->index( 1, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "Mountains and Image" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "Mountains and Image" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Checked );
 
     // This is a sub-item of "Mountains and Image"
     QModelIndex subindex = optContent->index( 0, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "Image" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "Image" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Checked );
 
     index = optContent->index( 2, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "Starburst" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "Starburst" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Checked );
 
     index = optContent->index( 3, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "Watermark" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "Watermark" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
 
     delete doc;
@@ -86,7 +89,7 @@ void TestOptionalContent::checkNoOptionalContent()
 void TestOptionalContent::checkIsVisible()
 {
     GooString *fileName = new GooString(TESTDATADIR "/unittestcases/vis_policy_test.pdf");
-    globalParams = new GlobalParams();
+    globalParams = std::make_unique<GlobalParams>();
     PDFDoc *doc = new PDFDoc( fileName );
     QVERIFY( doc );
 
@@ -154,12 +157,12 @@ void TestOptionalContent::checkIsVisible()
     QCOMPARE( ocgs->optContentIsVisible( &obj ), false );
 
     delete doc;
-    delete globalParams;
+    globalParams.reset();
 }
 
 void TestOptionalContent::checkVisibilitySetting()
 {
-    globalParams = new GlobalParams();
+    globalParams = std::make_unique<GlobalParams>();
     GooString *fileName = new GooString(TESTDATADIR "/unittestcases/vis_policy_test.pdf");
     PDFDoc *doc = new PDFDoc( fileName );
     QVERIFY( doc );
@@ -173,7 +176,7 @@ void TestOptionalContent::checkVisibilitySetting()
 
     // In this test, both Ref(21,0) and Ref(28,0) start On,
     // based on the file settings
-    Object ref21obj( 21, 0 );
+    Object ref21obj( { 21, 0 } );
     Ref ref21 = ref21obj.getRef();
     OptionalContentGroup *ocgA = ocgs->findOcgByRef( ref21 );
     QVERIFY( ocgA );
@@ -181,7 +184,7 @@ void TestOptionalContent::checkVisibilitySetting()
     QVERIFY( (ocgA->getName()->cmp("A")) == 0 );
     QCOMPARE( ocgA->getState(), OptionalContentGroup::On );
 
-    Object ref28obj( 28, 0 );
+    Object ref28obj( { 28, 0 } );
     Ref ref28 = ref28obj.getRef();
     OptionalContentGroup *ocgB = ocgs->findOcgByRef( ref28 );
     QVERIFY( ocgB );
@@ -360,7 +363,7 @@ void TestOptionalContent::checkVisibilitySetting()
     QCOMPARE( ocgs->optContentIsVisible( &obj ), false );
 
     delete doc;
-    delete globalParams;
+    globalParams.reset();
 }
 
 void TestOptionalContent::checkRadioButtons()
@@ -375,67 +378,76 @@ void TestOptionalContent::checkRadioButtons()
     QModelIndex index;
 
     index = optContent->index( 0, 0, QModelIndex() );
-    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QString( "Languages" ) );
+    QCOMPARE( optContent->data( index, Qt::DisplayRole ).toString(), QLatin1String( "Languages" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( index, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
 
     // These are sub-items of the "Languages" label
     QModelIndex subindex = optContent->index( 0, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "English" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "English" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Checked );
 
     subindex = optContent->index( 1, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "French" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "French" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
 
     subindex = optContent->index( 2, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "Japanese" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "Japanese" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
 
     // RBGroup of languages, so turning on Japanese should turn off English
     QVERIFY( optContent->setData( subindex, QVariant( true ), Qt::CheckStateRole ) );
 
     subindex = optContent->index( 0, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "English" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "English" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     subindex = optContent->index( 2, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "Japanese" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "Japanese" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Checked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::On );
 
     subindex = optContent->index( 1, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "French" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "French" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     // and turning on French should turn off Japanese
     QVERIFY( optContent->setData( subindex, QVariant( true ), Qt::CheckStateRole ) );
 
     subindex = optContent->index( 0, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "English" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "English" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     subindex = optContent->index( 2, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "Japanese" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "Japanese" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     subindex = optContent->index( 1, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "French" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "French" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Checked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::On );
 
 
     // and turning off French should leave them all off
     QVERIFY( optContent->setData( subindex, QVariant( false ), Qt::CheckStateRole ) );
 
     subindex = optContent->index( 0, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "English" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "English" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     subindex = optContent->index( 2, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "Japanese" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "Japanese" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     subindex = optContent->index( 1, 0, index );
-    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QString( "French" ) );
+    QCOMPARE( optContent->data( subindex, Qt::DisplayRole ).toString(), QLatin1String( "French" ) );
     QCOMPARE( static_cast<Qt::CheckState>( optContent->data( subindex, Qt::CheckStateRole ).toInt() ), Qt::Unchecked );
+    QCOMPARE( static_cast<Poppler::OptContentItem *>(subindex.internalPointer())->group()->getState(), OptionalContentGroup::Off );
 
     delete doc;
 }

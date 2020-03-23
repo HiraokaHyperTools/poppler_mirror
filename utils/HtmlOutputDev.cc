@@ -17,7 +17,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2005-2013, 2016-2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005-2013, 2016-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2008 Kjartan Maraas <kmaraas@gnome.org>
 // Copyright (C) 2008 Boris Toloknov <tlknv@yandex.ru>
 // Copyright (C) 2008 Haruyuki Kawabe <Haruyuki.Kawabe@unisys.co.jp>
@@ -42,26 +42,26 @@
 // Copyright (C) 2017 Caolán McNamara <caolanm@redhat.com>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
 // Copyright (C) 2018 Thibaut Brard <thibaut.brard@gmail.com>
+// Copyright (C) 2018-2020 Adam Reichold <adam.reichold@t-online.de>
+// Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
 //
 //========================================================================
 
-#ifdef __GNUC__
-#pragma implementation
-#endif
-
 #include "config.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <ctype.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstdarg>
+#include <cstddef>
+#include <cctype>
+#include <cmath>
 #include <iostream>
 #include "goo/GooString.h"
-#include "goo/GooList.h"
+#include "goo/gbasename.h"
+#include "goo/gbase64.h"
+#include "goo/gbasename.h"
 #include "UnicodeMap.h"
 #include "goo/gmem.h"
 #include "Error.h"
@@ -73,6 +73,7 @@
 #include "HtmlOutputDev.h"
 #include "HtmlFonts.h"
 #include "HtmlUtils.h"
+#include "InMemoryFile.h"
 #include "Outline.h"
 #include "PDFDoc.h"
 
@@ -100,39 +101,30 @@ public:
 };
 
 // returns true if x is closer to y than x is to z
-static inline bool IS_CLOSER(float x, float y, float z) { return fabs((x)-(y)) < fabs((x)-(z)); }
+static inline bool IS_CLOSER(float x, float y, float z) { return std::fabs((x)-(y)) < std::fabs((x)-(z)); }
 
-extern GBool complexMode;
-extern GBool singleHtml;
-extern GBool ignore;
-extern GBool printCommands;
-extern GBool printHtml;
-extern GBool noframes;
-extern GBool stout;
-extern GBool xml;
-extern GBool noRoundedCoordinates;
-extern GBool showHidden;
-extern GBool noMerge;
+extern bool complexMode;
+extern bool singleHtml;
+extern bool dataUrls;
+extern bool ignore;
+extern bool printCommands;
+extern bool printHtml;
+extern bool noframes;
+extern bool stout;
+extern bool xml;
+extern bool noRoundedCoordinates;
+extern bool showHidden;
+extern bool noMerge;
 
 extern double wordBreakThreshold;
 
-static GBool debug = gFalse;
+static bool debug = false;
 static GooString *gstr_buff0 = nullptr; // a workspace in which I format strings
-
-static GooString* basename(GooString* str){
-  
-  char *p=str->getCString();
-  int len=str->getLength();
-  for (int i=len-1;i>=0;i--)
-    if (*(p+i)==SLASH) 
-      return new GooString((p+i+1),len-i-1);
-  return new GooString(str);
-}
 
 #if 0
 static GooString* Dirname(GooString* str){
   
-  char *p=str->getCString();
+  char *p=str->c_str();
   int len=str->getLength();
   for (int i=len-1;i>=0;i--)
     if (*(p+i)==SLASH) 
@@ -146,7 +138,7 @@ static const char *print_matrix(const double *mat) {
 
   gstr_buff0 =  GooString::format("[{0:g} {1:g} {2:g} {3:g} {4:g} {5:g}]",
                                   *mat, mat[1], mat[2], mat[3], mat[4], mat[5]);
-  return gstr_buff0->getCString();
+  return gstr_buff0->c_str();
 }
 
 static const char *print_uni_str(const Unicode *u, const unsigned uLen) {
@@ -164,7 +156,7 @@ static const char *print_uni_str(const Unicode *u, const unsigned uLen) {
     }
   }
 
-  return gstr_buff0->getCString();
+  return gstr_buff0->c_str();
 }
 
 //------------------------------------------------------------------------
@@ -191,7 +183,7 @@ HtmlString::HtmlString(GfxState *state, double fontSize, HtmlFontAccu* _fonts) :
     yMax = y - descent * fontSize;
     GfxRGB rgb;
     state->getFillRGB(&rgb);
-    HtmlFont hfont=HtmlFont(font, static_cast<int>(fontSize-1), rgb);
+    HtmlFont hfont=HtmlFont(font, static_cast<int>(fontSize), rgb);
     if (isMatRotOrSkew(state->getTextMat())) {
       double normalizedMatrix[4];
       memcpy(normalizedMatrix, state->getTextMat(), sizeof(normalizedMatrix));
@@ -279,21 +271,20 @@ void HtmlString::endString()
 // HtmlPage
 //------------------------------------------------------------------------
 
-HtmlPage::HtmlPage(GBool rawOrder, char *imgExtVal) {
-  this->rawOrder = rawOrder;
+HtmlPage::HtmlPage(bool rawOrderA) {
+  rawOrder = rawOrderA;
   curStr = nullptr;
   yxStrings = nullptr;
   xyStrings = nullptr;
   yxCur1 = yxCur2 = nullptr;
   fonts=new HtmlFontAccu();
   links=new HtmlLinks();
-  imgList=new GooList();
+  imgList=new std::vector<HtmlImage*>();
   pageWidth=0;
   pageHeight=0;
   fontsPageMarker = 0;
   DocName=nullptr;
   firstPage = -1;
-  imgExt = new GooString(imgExtVal);
 }
 
 HtmlPage::~HtmlPage() {
@@ -301,14 +292,15 @@ HtmlPage::~HtmlPage() {
   delete DocName;
   delete fonts;
   delete links;
-  delete imgExt;
-  deleteGooList(imgList, HtmlImage);
+  for (auto entry : *imgList) {
+    delete entry;
+  }
+  delete imgList;
 }
 
 void HtmlPage::updateFont(GfxState *state) {
   GfxFont *font;
-  double *fm;
-  char *name;
+  const char *name;
   int code;
   double w;
   
@@ -334,7 +326,7 @@ void HtmlPage::updateFont(GfxState *state) {
 	fontSize *= w / 0.6;
       }
     }
-    fm = font->getFontMatrix();
+    const double *fm = font->getFontMatrix();
     if (fm[0] != 0) {
       fontSize *= fabs(fm[3] / fm[0]);
     }
@@ -347,32 +339,21 @@ void HtmlPage::beginString(GfxState *state, const GooString *s) {
 
 
 void HtmlPage::conv(){
-  HtmlString *tmp;
+  for(HtmlString *tmp=yxStrings;tmp;tmp=tmp->yxNext){
+     delete tmp->htext;
+     tmp->htext=HtmlFont::HtmlFilter(tmp->text,tmp->len);
 
-  int linkIndex = 0;
-  HtmlFont* h;
-  for(tmp=yxStrings;tmp;tmp=tmp->yxNext){
-     int pos=tmp->fontpos;
-     //  printf("%d\n",pos);
-     h=fonts->Get(pos);
-
-     if (tmp->htext) delete tmp->htext; 
-     tmp->htext=HtmlFont::simple(h,tmp->text,tmp->len);
-
+     int linkIndex = 0;
      if (links->inLink(tmp->xMin,tmp->yMin,tmp->xMax,tmp->yMax, linkIndex)){
        tmp->link = links->getLink(linkIndex);
-       /*GooString *t=tmp->htext;
-       tmp->htext=links->getLink(k)->Link(tmp->htext);
-       delete t;*/
      }
   }
-
 }
 
 
 void HtmlPage::addChar(GfxState *state, double x, double y,
 		       double dx, double dy, 
-			double ox, double oy, Unicode *u, int uLen) {
+			double ox, double oy, const Unicode *u, int uLen) {
   double x1, y1, w1, h1, dx2, dy2;
   int n, i;
   state->transform(x, y, &x1, &y1);
@@ -383,7 +364,7 @@ void HtmlPage::addChar(GfxState *state, double x, double y,
   //if ((UnicodeMap::getDirection(u[0]) != curStr->dir) || 
   // XXX
   if (debug) {
-    double *text_mat = state->getTextMat();
+    const double *text_mat = state->getTextMat();
     // rotation is (cos q, sin q, -sin q, cos q, 0, 0)
     // sin q is zero iff there is no rotation, or 180 deg. rotation;
     // for 180 rotation, cos q will be negative
@@ -482,11 +463,11 @@ static const char *strrstr( const char *s, const char *ss )
   return p;
 }
 
-static void CloseTags( GooString *htext, GBool &finish_a, GBool &finish_italic, GBool &finish_bold )
+static void CloseTags( GooString *htext, bool &finish_a, bool &finish_italic, bool &finish_bold )
 {
-  const char *last_italic = finish_italic && ( finish_bold   || finish_a    ) ? strrstr( htext->getCString(), "<i>" ) : nullptr;
-  const char *last_bold   = finish_bold   && ( finish_italic || finish_a    ) ? strrstr( htext->getCString(), "<b>" ) : nullptr;
-  const char *last_a      = finish_a      && ( finish_italic || finish_bold ) ? strrstr( htext->getCString(), "<a " ) : nullptr;
+  const char *last_italic = finish_italic && ( finish_bold   || finish_a    ) ? strrstr( htext->c_str(), "<i>" ) : nullptr;
+  const char *last_bold   = finish_bold   && ( finish_italic || finish_a    ) ? strrstr( htext->c_str(), "<b>" ) : nullptr;
+  const char *last_a      = finish_a      && ( finish_italic || finish_bold ) ? strrstr( htext->c_str(), "<a " ) : nullptr;
   if( finish_a && ( finish_italic || finish_bold ) && last_a > ( last_italic > last_bold ? last_italic : last_bold ) ){
     htext->append("</a>", 4);
     finish_a = false;
@@ -508,9 +489,8 @@ static void CloseTags( GooString *htext, GBool &finish_a, GBool &finish_italic, 
 // It may also strip out duplicate strings (if they are on top of each other); sometimes they are to create a font effect
 void HtmlPage::coalesce() {
   HtmlString *str1, *str2;
-  HtmlFont *hfont1, *hfont2;
   double space, horSpace, vertSpace, vertOverlap;
-  GBool addSpace, addLineBreak;
+  bool addSpace, addLineBreak;
   int n, i;
   double curX, curY;
 
@@ -534,12 +514,12 @@ void HtmlPage::coalesce() {
   if( !complexMode )
   {	/* if not in complex mode get rid of duplicate strings */
 	HtmlString *str3;
-	GBool found;
+	bool found;
   	while (str1)
 	{
 		double size = str1->yMax - str1->yMin;
 		double xLimit = str1->xMin + size * 0.2;
-		found = gFalse;
+		found = false;
 		for (str2 = str1, str3 = str1->yxNext;
 			str3 && str3->xMin < xLimit;
 			str2 = str3, str3 = str2->yxNext)
@@ -550,7 +530,7 @@ void HtmlPage::coalesce() {
 				fabs(str3->yMax - str1->yMax) < size * 0.2 &&
 				fabs(str3->xMax - str1->xMax) < size * 0.2)
 			{
-				found = gTrue;
+				found = true;
 				//printf("found duplicate!\n");
 				break;
 			}
@@ -570,7 +550,7 @@ void HtmlPage::coalesce() {
   
   str1 = yxStrings;
   
-  hfont1 = getFont(str1);
+  const HtmlFont *hfont1 = getFont(str1);
   if( hfont1->isBold() )
     str1->htext->insert(0,"<b>",3);
   if( hfont1->isItalic() )
@@ -583,7 +563,7 @@ void HtmlPage::coalesce() {
   curX = str1->xMin; curY = str1->yMin;
 
   while (str1 && (str2 = str1->yxNext)) {
-    hfont2 = getFont(str2);
+    const HtmlFont *hfont2 = getFont(str2);
     space = str1->yMax - str1->yMin; // the height of the font's bounding box
     horSpace = str2->xMin - str1->xMax;
     // if strings line up on left-hand side AND they are on subsequent lines, we need a line break
@@ -681,9 +661,9 @@ void HtmlPage::coalesce() {
       HtmlLink *hlink1 = str1->getLink();
       HtmlLink *hlink2 = str2->getLink();
       bool switch_links = !hlink1 || !hlink2 || !hlink1->isEqualDest(*hlink2);
-      GBool finish_a = switch_links && hlink1 != nullptr;
-      GBool finish_italic = hfont1->isItalic() && ( !hfont2->isItalic() || finish_a );
-      GBool finish_bold   = hfont1->isBold()   && ( !hfont2->isBold()   || finish_a || finish_italic );
+      bool finish_a = switch_links && hlink1 != nullptr;
+      bool finish_italic = hfont1->isItalic() && ( !hfont2->isItalic() || finish_a );
+      bool finish_bold   = hfont1->isBold()   && ( !hfont2->isBold()   || finish_a || finish_italic );
       CloseTags( str1->htext, finish_a, finish_italic, finish_bold );
       if( switch_links && hlink2 != nullptr ) {
         GooString *ls = hlink2->getLinkStart();
@@ -710,9 +690,9 @@ void HtmlPage::coalesce() {
       delete str2;
     } else { // keep strings separate
 //      printf("no\n"); 
-      GBool finish_a = str1->getLink() != nullptr;
-      GBool finish_bold   = hfont1->isBold();
-      GBool finish_italic = hfont1->isItalic();
+      bool finish_a = str1->getLink() != nullptr;
+      bool finish_bold   = hfont1->isBold();
+      bool finish_italic = hfont1->isItalic();
       CloseTags( str1->htext, finish_a, finish_italic, finish_bold );
      
       str1->xMin = curX; str1->yMin = curY; 
@@ -732,9 +712,9 @@ void HtmlPage::coalesce() {
   }
   str1->xMin = curX; str1->yMin = curY;
 
-  GBool finish_bold   = hfont1->isBold();
-  GBool finish_italic = hfont1->isItalic();
-  GBool finish_a = str1->getLink() != nullptr;
+  bool finish_bold   = hfont1->isBold();
+  bool finish_italic = hfont1->isItalic();
+  bool finish_a = str1->getLink() != nullptr;
   CloseTags( str1->htext, finish_a, finish_italic, finish_bold );
 
 #if 0 //~ for debugging
@@ -742,7 +722,7 @@ void HtmlPage::coalesce() {
     printf("x=%3d..%3d  y=%3d..%3d  size=%2d ",
 	   (int)str1->xMin, (int)str1->xMax, (int)str1->yMin, (int)str1->yMax,
 	   (int)(str1->yMax - str1->yMin));
-    printf("'%s'\n", str1->htext->getCString());  
+    printf("'%s'\n", str1->htext->c_str());  
   }
   printf("\n------------------------------------------------------------\n\n");
 #endif
@@ -755,13 +735,12 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
     
   for(int i=fontsPageMarker;i < fonts->size();i++) {
     GooString *fontCSStyle = fonts->CSStyle(i);
-    fprintf(f,"\t%s\n",fontCSStyle->getCString());
+    fprintf(f,"\t%s\n",fontCSStyle->c_str());
     delete fontCSStyle;
   }
-  
-  int listlen=imgList->getLength();
-  for (int i = 0; i < listlen; i++) {
-    HtmlImage *img = (HtmlImage*)imgList->del(0);
+
+  for (auto ptr : *imgList) {
+    auto img = static_cast<HtmlImage *>(ptr);
     if (!noRoundedCoordinates) {
       fprintf(f, "<image top=\"%d\" left=\"%d\" ", xoutRound(img->yMin), xoutRound(img->xMin));
       fprintf(f, "width=\"%d\" height=\"%d\" ", xoutRound(img->xMax - img->xMin), xoutRound(img->yMax - img->yMin));
@@ -770,9 +749,10 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
       fprintf(f, "<image top=\"%f\" left=\"%f\" ", img->yMin, img->xMin);
       fprintf(f, "width=\"%f\" height=\"%f\" ", img->xMax - img->xMin, img->yMax - img->yMin);
     }
-    fprintf(f,"src=\"%s\"/>\n",img->fName->getCString());
+    fprintf(f,"src=\"%s\"/>\n",img->fName->c_str());
     delete img;
   }
+  imgList->clear();
 
   for(HtmlString *tmp=yxStrings;tmp;tmp=tmp->yxNext){
     if (tmp->htext){
@@ -785,7 +765,7 @@ void HtmlPage::dumpAsXML(FILE* f,int page){
         fprintf(f, "width=\"%f\" height=\"%f\" ", tmp->xMax - tmp->xMin, tmp->yMax - tmp->yMin);
       }
       fprintf(f,"font=\"%d\">", tmp->fontpos);
-      fputs(tmp->htext->getCString(),f);
+      fputs(tmp->htext->c_str(),f);
       fputs("</text>\n",f);
     }
   }
@@ -829,39 +809,34 @@ static void printCSS(FILE *f)
 }
 
 int HtmlPage::dumpComplexHeaders(FILE * const file, FILE *& pageFile, int page) {
-  GooString* tmp;
 
   if( !noframes )
   {
-      GooString* pgNum=GooString::fromInt(page);
-      tmp = new GooString(DocName);
+      const std::string pgNum = std::to_string(page);
+      std::string pageFileName(DocName->toStr());
       if (!singleHtml){
-            tmp->append('-')->append(pgNum)->append(".html");
-            pageFile = fopen(tmp->getCString(), "w");
+            pageFileName += '-' + pgNum + ".html";
+            pageFile = fopen(pageFileName.c_str(), "w");
       } else {
-            tmp->append("-html")->append(".html");
-            pageFile = fopen(tmp->getCString(), "a");
+            pageFileName += "-html.html";
+            pageFile = fopen(pageFileName.c_str(), "a");
       }
-      delete pgNum;
+
       if (!pageFile) {
-	  error(errIO, -1, "Couldn't open html file '{0:t}'", tmp);
-	  delete tmp;
+	  error(errIO, -1, "Couldn't open html file '{0:t}'", pageFileName.c_str());
 	  return 1;
       } 
 
       if (!singleHtml)
         fprintf(pageFile,"%s\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title>Page %d</title>\n\n", DOCTYPE, page);
       else
-        fprintf(pageFile,"%s\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title>%s</title>\n\n", DOCTYPE, tmp->getCString());
+        fprintf(pageFile,"%s\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title>%s</title>\n\n", DOCTYPE, pageFileName.c_str());
 
-      delete tmp;
-
-      GooString *htmlEncoding = HtmlOutputDev::mapEncodingToHtml(globalParams->getTextEncodingName());
+      const std::string htmlEncoding = HtmlOutputDev::mapEncodingToHtml(globalParams->getTextEncodingName());
       if (!singleHtml)
-        fprintf(pageFile, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n", htmlEncoding->getCString());
+        fprintf(pageFile, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n", htmlEncoding.c_str());
       else
-        fprintf(pageFile, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n <br/>\n", htmlEncoding->getCString());
-      delete htmlEncoding;
+        fprintf(pageFile, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n <br/>\n", htmlEncoding.c_str());
   }
   else 
   {
@@ -873,15 +848,12 @@ int HtmlPage::dumpComplexHeaders(FILE * const file, FILE *& pageFile, int page) 
   return 0;
 }
 
-void HtmlPage::dumpComplex(FILE *file, int page){
+void HtmlPage::dumpComplex(FILE *file, int page, const std::vector<std::string>& backgroundImages) {
   FILE* pageFile;
-  GooString* tmp;
 
   if( firstPage == -1 ) firstPage = page; 
   
   if (dumpComplexHeaders(file, pageFile, page)) { error(errIO, -1, "Couldn't write headers."); return; }
-
-  tmp=basename(DocName);
    
   fputs("<style type=\"text/css\">\n<!--\n",pageFile);
   fputs("\tp {margin: 0; padding: 0;}",pageFile);
@@ -891,7 +863,7 @@ void HtmlPage::dumpComplex(FILE *file, int page){
          fontCSStyle = fonts->CSStyle(i);
     else
          fontCSStyle = fonts->CSStyle(i,page);
-    fprintf(pageFile,"\t%s\n",fontCSStyle->getCString());
+    fprintf(pageFile,"\t%s\n",fontCSStyle->c_str());
     delete fontCSStyle;
   }
  
@@ -905,15 +877,12 @@ void HtmlPage::dumpComplex(FILE *file, int page){
   fprintf(pageFile,"<div id=\"page%d-div\" style=\"position:relative;width:%dpx;height:%dpx;\">\n",
       page, pageWidth, pageHeight);
 
-  if( !ignore ) 
+  if(!ignore && (size_t) (page - firstPage) < backgroundImages.size())
   {
     fprintf(pageFile,
-	    "<img width=\"%d\" height=\"%d\" src=\"%s%03d.%s\" alt=\"background image\"/>\n",
-	    pageWidth, pageHeight, tmp->getCString(), 
-		(page-firstPage+1), imgExt->getCString());
+      "<img width=\"%d\" height=\"%d\" src=\"%s\" alt=\"background image\"/>\n",
+      pageWidth, pageHeight, backgroundImages[page - firstPage].c_str());
   }
-  
-  delete tmp;
   
   for(HtmlString *tmp1=yxStrings;tmp1;tmp1=tmp1->yxNext){
     if (tmp1->htext){
@@ -927,7 +896,7 @@ void HtmlPage::dumpComplex(FILE *file, int page){
           fprintf(pageFile, "%d", page);
       }
       fprintf(pageFile,"%d\">", tmp1->fontpos);
-      fputs(tmp1->htext->getCString(), pageFile);
+      fputs(tmp1->htext->c_str(), pageFile);
       fputs("</p>\n", pageFile);
     }
   }
@@ -942,20 +911,19 @@ void HtmlPage::dumpComplex(FILE *file, int page){
 }
 
 
-void HtmlPage::dump(FILE *f, int pageNum) 
+void HtmlPage::dump(FILE *f, int pageNum, const std::vector<std::string>& backgroundImages)
 {
   if (complexMode || singleHtml)
   {
     if (xml) dumpAsXML(f, pageNum);
-    if (!xml) dumpComplex(f, pageNum);  
+    if (!xml) dumpComplex(f, pageNum, backgroundImages);
   }
   else
   {
     fprintf(f,"<a name=%d></a>",pageNum);
     // Loop over the list of image names on this page
-    int listlen=imgList->getLength();
-    for (int i = 0; i < listlen; i++) {
-      HtmlImage *img = (HtmlImage*)imgList->del(0);
+    for (auto ptr : *imgList) {
+      auto img = static_cast<HtmlImage *>(ptr);
 
       // see printCSS() for class names
       const char *styles[4] = { "", " class=\"xflip\"", " class=\"yflip\"", " class=\"xyflip\"" };
@@ -963,15 +931,16 @@ void HtmlPage::dump(FILE *f, int pageNum)
       if (img->xMin > img->xMax) style_index += 1; // xFlip
       if (img->yMin > img->yMax) style_index += 2; // yFlip
 
-      fprintf(f,"<img%s src=\"%s\"/><br/>\n",styles[style_index],img->fName->getCString());
+      fprintf(f,"<img%s src=\"%s\"/><br/>\n",styles[style_index],img->fName->c_str());
       delete img;
     }
+    imgList->clear();
 
     GooString* str;
     for(HtmlString *tmp=yxStrings;tmp;tmp=tmp->yxNext){
       if (tmp->htext){
 		str=new GooString(tmp->htext); 
-		fputs(str->getCString(),f);
+		fputs(str->c_str(),f);
 		delete str;      
 		fputs("<br/>\n",f);
       }
@@ -1014,13 +983,13 @@ void HtmlPage::clear() {
 
 }
 
-void HtmlPage::setDocName(char *fname){
+void HtmlPage::setDocName(const char *fname){
   DocName=new GooString(fname);
 }
 
 void HtmlPage::addImage(GooString *fname, GfxState *state) {
   HtmlImage *img = new HtmlImage(fname, state);
-  imgList->append(img);
+  imgList->push_back(img);
 }
 
 //------------------------------------------------------------------------
@@ -1039,7 +1008,7 @@ HtmlMetaVar::~HtmlMetaVar()
    delete content;
 } 
     
-GooString* HtmlMetaVar::toString()	
+GooString* HtmlMetaVar::toString() const
 {
     GooString *result = new GooString("<meta name=\"");
     result->append(name);
@@ -1058,26 +1027,23 @@ static const char* HtmlEncodings[][2] = {
     {nullptr, nullptr}
 };
 
-GooString* HtmlOutputDev::mapEncodingToHtml(GooString* encoding)
+std::string HtmlOutputDev::mapEncodingToHtml(const std::string &encoding)
 {
-  GooString* enc = encoding;
   for(int i = 0; HtmlEncodings[i][0] != nullptr; i++)
   {
-    if( enc->cmp(HtmlEncodings[i][0]) == 0 )
+    if( encoding == HtmlEncodings[i][0] )
     {
-      delete enc;
-      return new GooString(HtmlEncodings[i][1]);
+      return HtmlEncodings[i][1];
     }
   }
-  return enc; 
+  return encoding;
 }
 
 void HtmlOutputDev::doFrame(int firstPage){
   GooString* fName=new GooString(Docname);
-  GooString* htmlEncoding;
   fName->append(".html");
 
-  if (!(fContentsFrame = fopen(fName->getCString(), "w"))){
+  if (!(fContentsFrame = fopen(fName->c_str(), "w"))){
     error(errIO, -1, "Couldn't open html file '{0:t}'", fName);
     delete fName;
     return;
@@ -1085,57 +1051,55 @@ void HtmlOutputDev::doFrame(int firstPage){
   
   delete fName;
     
-  fName=basename(Docname);
+  const std::string baseName = gbasename(Docname->c_str());
   fputs(DOCTYPE, fContentsFrame);
   fputs("\n<html>",fContentsFrame);
   fputs("\n<head>",fContentsFrame);
-  fprintf(fContentsFrame,"\n<title>%s</title>",docTitle->getCString());
-  htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName());
-  fprintf(fContentsFrame, "\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n", htmlEncoding->getCString());
+  fprintf(fContentsFrame,"\n<title>%s</title>",docTitle->c_str());
+  const std::string htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName());
+  fprintf(fContentsFrame, "\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n", htmlEncoding.c_str());
   dumpMetaVars(fContentsFrame);
   fprintf(fContentsFrame, "</head>\n");
   fputs("<frameset cols=\"100,*\">\n",fContentsFrame);
-  fprintf(fContentsFrame,"<frame name=\"links\" src=\"%s_ind.html\"/>\n",fName->getCString());
+  fprintf(fContentsFrame,"<frame name=\"links\" src=\"%s_ind.html\"/>\n", baseName.c_str());
   fputs("<frame name=\"contents\" src=",fContentsFrame); 
   if (complexMode) 
-      fprintf(fContentsFrame,"\"%s-%d.html\"",fName->getCString(), firstPage);
+      fprintf(fContentsFrame,"\"%s-%d.html\"", baseName.c_str(), firstPage);
   else
-      fprintf(fContentsFrame,"\"%ss.html\"",fName->getCString());
+      fprintf(fContentsFrame,"\"%ss.html\"", baseName.c_str());
   
   fputs("/>\n</frameset>\n</html>\n",fContentsFrame);
  
-  delete fName;
-  delete htmlEncoding;
   fclose(fContentsFrame);  
 }
 
-HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, char *fileName, char *title, 
-	char *author, char *keywords, char *subject, char *date,
-	char *extension,
-	GBool rawOrder, int firstPage, GBool outline) 
+HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, const char *fileName, const char *title,
+	const char *author, const char *keywords, const char *subject, const char *date,
+	bool rawOrderA, int firstPage, bool outline)
 {
   catalog = catalogA;
   fContentsFrame = nullptr;
+  page = nullptr;
   docTitle = new GooString(title);
   pages = nullptr;
-  dumpJPEG=gTrue;
-  //write = gTrue;
-  this->rawOrder = rawOrder;
+  dumpJPEG=true;
+  //write = true;
+  rawOrder = rawOrderA;
   this->doOutline = outline;
-  ok = gFalse;
+  ok = false;
   //this->firstPage = firstPage;
   //pageNum=firstPage;
   // open file
-  needClose = gFalse;
-  pages = new HtmlPage(rawOrder, extension);
+  needClose = false;
+  pages = new HtmlPage(rawOrder);
   
-  glMetaVars = new GooList();
-  glMetaVars->append(new HtmlMetaVar("generator", "pdftohtml 0.36"));  
-  if( author ) glMetaVars->append(new HtmlMetaVar("author", author));  
-  if( keywords ) glMetaVars->append(new HtmlMetaVar("keywords", keywords));  
-  if( date ) glMetaVars->append(new HtmlMetaVar("date", date));  
-  if( subject ) glMetaVars->append(new HtmlMetaVar("subject", subject));
- 
+  glMetaVars = new std::vector<HtmlMetaVar*>();
+  glMetaVars->push_back(new HtmlMetaVar("generator", "pdftohtml 0.36"));
+  if( author ) glMetaVars->push_back(new HtmlMetaVar("author", author));
+  if( keywords ) glMetaVars->push_back(new HtmlMetaVar("keywords", keywords));
+  if( date ) glMetaVars->push_back(new HtmlMetaVar("date", date));
+  if( subject ) glMetaVars->push_back(new HtmlMetaVar("subject", subject));
+
   maxPageWidth = 0;
   maxPageHeight = 0;
 
@@ -1152,7 +1116,7 @@ HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, char *fileName, char *title,
 
          doFrame(firstPage);
 
-         if (!(fContentsFrame = fopen(left->getCString(), "w")))
+         if (!(fContentsFrame = fopen(left->c_str(), "w")))
          {
              error(errIO, -1, "Couldn't open html file '{0:t}'", left);
              delete left;
@@ -1164,9 +1128,9 @@ HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, char *fileName, char *title,
 
          if (doOutline)
          {
-             GooString *str = basename(Docname);
-             fprintf(fContentsFrame, "<a href=\"%s%s\" target=\"contents\">Outline</a><br/>", str->getCString(), complexMode ? "-outline.html" : "s.html#outline");
-             delete str;
+             fprintf(fContentsFrame, "<a href=\"%s%s\" target=\"contents\">Outline</a><br/>",
+                 gbasename(Docname->c_str()).c_str(),
+                 complexMode ? "-outline.html" : "s.html#outline");
          }
      }
 	if (!complexMode)
@@ -1175,7 +1139,7 @@ HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, char *fileName, char *title,
        GooString* right=new GooString(fileName);
        right->append("s.html");
 
-       if (!(page=fopen(right->getCString(),"w"))){
+       if (!(page=fopen(right->c_str(),"w"))){
         error(errIO, -1, "Couldn't open html file '{0:t}'", right);
         delete right;
 		return;
@@ -1194,7 +1158,7 @@ HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, char *fileName, char *title,
       GooString* right=new GooString(fileName);
       if (!xml) right->append(".html");
       if (xml) right->append(".xml");
-      if (!(page=fopen(right->getCString(),"w"))){
+      if (!(page=fopen(right->c_str(),"w"))){
 	error(errIO, -1, "Couldn't open html file '{0:t}'", right);
 	delete right;
 	return;
@@ -1202,36 +1166,36 @@ HtmlOutputDev::HtmlOutputDev(Catalog *catalogA, char *fileName, char *title,
       delete right;
     }
 
-    GooString *htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName()); 
+    const std::string htmlEncoding = mapEncodingToHtml(globalParams->getTextEncodingName());
     if (xml) 
     {
-      fprintf(page, "<?xml version=\"1.0\" encoding=\"%s\"?>\n", htmlEncoding->getCString());
+      fprintf(page, "<?xml version=\"1.0\" encoding=\"%s\"?>\n", htmlEncoding.c_str());
       fputs("<!DOCTYPE pdf2xml SYSTEM \"pdf2xml.dtd\">\n\n", page);
       fprintf(page,"<pdf2xml producer=\"%s\" version=\"%s\">\n", PACKAGE_NAME, PACKAGE_VERSION);
     } 
     else 
     {
-      fprintf(page,"%s\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title>%s</title>\n", DOCTYPE, docTitle->getCString());
+      fprintf(page,"%s\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title>%s</title>\n", DOCTYPE, docTitle->c_str());
       
-      fprintf(page, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n", htmlEncoding->getCString());
+      fprintf(page, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\"/>\n", htmlEncoding.c_str());
       
       dumpMetaVars(page);
       printCSS(page);
       fprintf(page,"</head>\n");
       fprintf(page,"<body bgcolor=\"#A0A0A0\" vlink=\"blue\" link=\"blue\">\n");
     }
-    delete htmlEncoding;
   }
-  ok = gTrue; 
+  ok = true; 
 }
 
 HtmlOutputDev::~HtmlOutputDev() {
-    HtmlFont::clear(); 
-    
     delete Docname;
     delete docTitle;
 
-    deleteGooList(glMetaVars, HtmlMetaVar);
+    for (auto entry : *glMetaVars) {
+      delete entry;
+    }
+    delete glMetaVars;
 
     if (fContentsFrame){
       fputs("</body>\n</html>\n",fContentsFrame);  
@@ -1252,14 +1216,14 @@ HtmlOutputDev::~HtmlOutputDev() {
       delete pages;
 }
 
-void HtmlOutputDev::startPage(int pageNum, GfxState *state, XRef *xref) {
+void HtmlOutputDev::startPage(int pageNumA, GfxState *state, XRef *xref) {
 #if 0
   if (mode&&!xml){
     if (write){
-      write=gFalse;
+      write=false;
       GooString* fname=Dirname(Docname);
       fname->append("image.log");
-      if((tin=fopen(getFileNameFromPath(fname->getCString(),fname->getLength()),"w"))==NULL){
+      if((tin=fopen(getFileNameFromPath(fname->c_str(),fname->getLength()),"w"))==NULL){
 	printf("Error : can not open %s",fname);
 	exit(1);
       }
@@ -1272,25 +1236,23 @@ void HtmlOutputDev::startPage(int pageNum, GfxState *state, XRef *xref) {
   }
 #endif
 
-  this->pageNum = pageNum;
-  GooString *str=basename(Docname);
+  pageNum = pageNumA;
+  const std::string str = gbasename(Docname->c_str());
   pages->clear(); 
   if(!noframes)
   {
     if (fContentsFrame)
 	{
       if (complexMode)
-		fprintf(fContentsFrame,"<a href=\"%s-%d.html\"",str->getCString(),pageNum);
+		fprintf(fContentsFrame,"<a href=\"%s-%d.html\"", str.c_str(), pageNum);
       else 
-		fprintf(fContentsFrame,"<a href=\"%ss.html#%d\"",str->getCString(),pageNum);
+		fprintf(fContentsFrame,"<a href=\"%ss.html#%d\"", str.c_str(), pageNum);
       fprintf(fContentsFrame," target=\"contents\" >Page %d</a><br/>\n",pageNum);
     }
   }
 
   pages->pageWidth=static_cast<int>(state->getPageWidth());
   pages->pageHeight=static_cast<int>(state->getPageHeight());
-
-  delete str;
 } 
 
 
@@ -1304,7 +1266,7 @@ void HtmlOutputDev::endPage() {
 
   pages->conv();
   pages->coalesce();
-  pages->dump(page, pageNum);
+  pages->dump(page, pageNum, backgroundImages);
   
   // I don't yet know what to do in the case when there are pages of different
   // sizes and we want complex output: running ghostscript many times 
@@ -1314,6 +1276,10 @@ void HtmlOutputDev::endPage() {
   
   //if(!noframes&&!xml) fputs("<br/>\n", fContentsFrame);
   if(!stout && !globalParams->getErrQuiet()) printf("Page-%d\n",(pageNum));
+}
+
+void HtmlOutputDev::addBackgroundImage(const std::string& img) {
+  backgroundImages.push_back(img);
 }
 
 void HtmlOutputDev::updateFont(GfxState *state) {
@@ -1331,7 +1297,7 @@ void HtmlOutputDev::endString(GfxState *state) {
 void HtmlOutputDev::drawChar(GfxState *state, double x, double y,
 	      double dx, double dy,
 	      double originX, double originY,
-	      CharCode code, int /*nBytes*/, Unicode *u, int uLen) 
+	      CharCode code, int /*nBytes*/, const Unicode *u, int uLen)
 {
   if ( !showHidden && (state->getRender() & 3) == 3) {
     return;
@@ -1341,12 +1307,14 @@ void HtmlOutputDev::drawChar(GfxState *state, double x, double y,
 
 void HtmlOutputDev::drawJpegImage(GfxState *state, Stream *str)
 {
-  FILE *f1;
+  InMemoryFile ims;
+  FILE *f1 = nullptr;
   int c;
 
   // open the image file
-  GooString *fName=createImageFileName("jpg");
-  if (!(f1 = fopen(fName->getCString(), "wb"))) {
+  GooString *fName = createImageFileName("jpg");
+  f1 = dataUrls ? ims.open("wb") : fopen(fName->c_str(), "wb");
+  if (!f1) {
     error(errIO, -1, "Couldn't open image file '{0:t}'", fName);
     delete fName;
     return;
@@ -1362,16 +1330,19 @@ void HtmlOutputDev::drawJpegImage(GfxState *state, Stream *str)
 
   fclose(f1);
 
-  if (fName) {
-      pages->addImage(fName, state);
+  if (dataUrls) {
+    delete fName;
+    fName = new GooString(std::string("data:image/jpeg;base64,") + gbase64Encode(ims.getBuffer()));
   }
+  pages->addImage(fName, state);
 }
 
 void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int height,
-                                 GfxImageColorMap *colorMap, GBool isMask)
+                                 GfxImageColorMap *colorMap, bool isMask)
 {
 #ifdef ENABLE_LIBPNG
   FILE *f1;
+  InMemoryFile ims;
 
   if (!colorMap && !isMask) {
     error(errInternal, -1, "Can't have color image without a color map");
@@ -1380,7 +1351,8 @@ void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int he
 
   // open the image file
   GooString *fName=createImageFileName("png");
-  if (!(f1 = fopen(fName->getCString(), "wb"))) {
+  f1 = dataUrls ? ims.open("wb") : fopen(fName->c_str(), "wb");
+  if (!f1) {
     error(errIO, -1, "Couldn't open image file '{0:t}'", fName);
     delete fName;
     return;
@@ -1396,7 +1368,7 @@ void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int he
   }
 
   if (!isMask) {
-    Guchar *p;
+    unsigned char *p;
     GfxRGB rgb;
     png_byte *row = (png_byte *) gmalloc(3 * width);   // 3 bytes/pixel: RGB
     png_bytep *row_pointer= &row;
@@ -1451,7 +1423,7 @@ void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int he
     int invert_bits = 0xff;
     if (colorMap) {
       GfxGray gray;
-      Guchar zero[gfxColorMaxComps];
+      unsigned char zero[gfxColorMaxComps];
       memset(zero, 0, sizeof(zero));
       colorMap->getGray(zero, &gray);
       if (colToByte(gray) == 0)
@@ -1459,7 +1431,7 @@ void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int he
     }
 
     str->reset();
-    Guchar *png_row = (Guchar *)gmalloc(size);
+    unsigned char *png_row = (unsigned char *)gmalloc(size);
 
     for (int ri = 0; ri < height; ++ri)
     {
@@ -1485,6 +1457,10 @@ void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int he
   delete writer;
   fclose(f1);
 
+  if (dataUrls) {
+    delete fName;
+    fName = new GooString(std::string("data:image/png;base64,") + gbase64Encode(ims.getBuffer()));
+  }
   pages->addImage(fName, state);
 #else
   return;
@@ -1493,21 +1469,12 @@ void HtmlOutputDev::drawPngImage(GfxState *state, Stream *str, int width, int he
 
 GooString *HtmlOutputDev::createImageFileName(const char *ext)
 {
-  GooString *fName=new GooString(Docname);
-  fName->append("-");
-  GooString *pgNum= GooString::fromInt(pageNum);
-  GooString *imgnum= GooString::fromInt(pages->getNumImages()+1);
-
-  fName->append(pgNum)->append("_")->append(imgnum)->append(".")->append(ext);
-  delete pgNum;
-  delete imgnum;
-
-  return fName;
+  return GooString::format("{0:s}-{1:d}_{2:d}.{3:s}", Docname->c_str(), pageNum, pages->getNumImages() + 1, ext);
 }
 
 void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
-				  int width, int height, GBool invert,
-				  GBool interpolate, GBool inlineImg) {
+				  int width, int height, bool invert,
+				  bool interpolate, bool inlineImg) {
 
   if (ignore||(complexMode && !xml)) {
     OutputDev::drawImageMask(state, ref, str, width, height, invert, interpolate, inlineImg);
@@ -1520,7 +1487,7 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
   }
   else {
 #ifdef ENABLE_LIBPNG
-    drawPngImage(state, str, width, height, nullptr, gTrue);
+    drawPngImage(state, str, width, height, nullptr, true);
 #else
     OutputDev::drawImageMask(state, ref, str, width, height, invert, interpolate, inlineImg);
 #endif
@@ -1529,7 +1496,7 @@ void HtmlOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 
 void HtmlOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
 			      int width, int height, GfxImageColorMap *colorMap,
-			      GBool interpolate, int *maskColors, GBool inlineImg) {
+			      bool interpolate, const int *maskColors, bool inlineImg) {
 
   if (ignore||(complexMode && !xml)) {
     OutputDev::drawImage(state, ref, str, width, height, colorMap, interpolate,
@@ -1573,34 +1540,31 @@ void HtmlOutputDev::doProcessLink(AnnotLink* link){
 }
 
 GooString* HtmlOutputDev::getLinkDest(AnnotLink *link){
-  char *p;
   if (!link->getAction())
     return new GooString();
   switch(link->getAction()->getKind()) 
   {
       case actionGoTo:
-	  { 
-	  GooString* file=basename(Docname);
-	  int page=1;
+	  {
+	  int destPage=1;
 	  LinkGoTo *ha=(LinkGoTo *)link->getAction();
-	  LinkDest *dest=nullptr;
+	  std::unique_ptr<LinkDest> dest;
 	  if (ha->getDest()!=nullptr)
-	      dest=ha->getDest()->copy();
+	      dest=std::unique_ptr<LinkDest>(ha->getDest()->copy());
 	  else if (ha->getNamedDest()!=nullptr)
 	      dest=catalog->findDest(ha->getNamedDest());
 	      
 	  if (dest){ 
+	      GooString* file = new GooString(gbasename(Docname->c_str()));
+
 	      if (dest->isPageRef()){
-		  Ref pageref=dest->getPageRef();
-		  page=catalog->findPage(pageref.num,pageref.gen);
+		  const Ref pageref=dest->getPageRef();
+		  destPage=catalog->findPage(pageref);
 	      }
 	      else {
-		  page=dest->getPageNum();
+		  destPage=dest->getPageNum();
 	      }
 
-	      delete dest;
-
-	      GooString *str=GooString::fromInt(page);
 	      /* 		complex 	simple
 	       	frames		file-4.html	files.html#4
 		noframes	file.html#4	file.html#4
@@ -1608,25 +1572,24 @@ GooString* HtmlOutputDev::getLinkDest(AnnotLink *link){
 	      if (noframes)
 	      {
 		  file->append(".html#");
-		  file->append(str);
+		  file->append(std::to_string(destPage));
 	      }
 	      else
 	      {
 	      	if( complexMode ) 
 		{
 		    file->append("-");
-		    file->append(str);
+		    file->append(std::to_string(destPage));
 		    file->append(".html");
 		}
 		else
 		{
 		    file->append("s.html#");
-		    file->append(str);
+		    file->append(std::to_string(destPage));
 		}
 	      }
 
-	      if (printCommands) printf(" link to page %d ",page);
-	      delete str;
+	      if (printCommands) printf(" link to page %d ",destPage);
 	      return file;
 	  }
 	  else 
@@ -1638,50 +1601,48 @@ GooString* HtmlOutputDev::getLinkDest(AnnotLink *link){
 	  {
 	  LinkGoToR *ha=(LinkGoToR *) link->getAction();
 	  LinkDest *dest=nullptr;
-	  int page=1;
+	  int destPage=1;
 	  GooString *file=new GooString();
 	  if (ha->getFileName()){
 	      delete file;
-	      file=new GooString(ha->getFileName()->getCString());
+	      file=new GooString(ha->getFileName()->c_str());
 	  }
 	  if (ha->getDest()!=nullptr)  dest=ha->getDest()->copy();
 	  if (dest&&file){
-	      if (!(dest->isPageRef()))  page=dest->getPageNum();
+	      if (!(dest->isPageRef()))  destPage=dest->getPageNum();
 	      delete dest;
 
-	      if (printCommands) printf(" link to page %d ",page);
+	      if (printCommands) printf(" link to page %d ",destPage);
 	      if (printHtml){
-		  p=file->getCString()+file->getLength()-4;
+		  const char *p=file->c_str()+file->getLength()-4;
 		  if (!strcmp(p, ".pdf") || !strcmp(p, ".PDF")){
 		      file->del(file->getLength()-4,4);
 		      file->append(".html");
 		  }
 		  file->append('#');
-		  GooString *pgNum = GooString::fromInt(page);
-		  file->append(pgNum);
-		  delete pgNum;
+		  file->append(std::to_string(destPage));
 	      }
 	  }
-	  if (printCommands && file) printf("filename %s\n",file->getCString());
+	  if (printCommands && file) printf("filename %s\n",file->c_str());
 	  return file;
 	  }
       case actionURI:
 	  { 
 	  LinkURI *ha=(LinkURI *) link->getAction();
-	  GooString* file=new GooString(ha->getURI()->getCString());
-	  // printf("uri : %s\n",file->getCString());
+	  GooString* file=new GooString(ha->getURI());
+	  // printf("uri : %s\n",file->c_str());
 	  return file;
 	  }
       case actionLaunch:
 	  if (printHtml) {
 	      LinkLaunch *ha=(LinkLaunch *) link->getAction();
-	      GooString* file=new GooString(ha->getFileName()->getCString());
-	      p=file->getCString()+file->getLength()-4;
+	      GooString* file=new GooString(ha->getFileName()->c_str());
+	      const char *p=file->c_str()+file->getLength()-4;
 	      if (!strcmp(p, ".pdf") || !strcmp(p, ".PDF")){
 		  file->del(file->getLength()-4,4);
 		  file->append(".html");
 	      }
-	      if (printCommands) printf("filename %s",file->getCString());
+	      if (printCommands) printf("filename %s",file->c_str());
     
 	      return file;      
   
@@ -1696,33 +1657,29 @@ void HtmlOutputDev::dumpMetaVars(FILE *file)
 {
   GooString *var;
 
-  for(int i = 0; i < glMetaVars->getLength(); i++)
+  for(const HtmlMetaVar *t : *glMetaVars)
   {
-     HtmlMetaVar *t = (HtmlMetaVar*)glMetaVars->get(i); 
-     var = t->toString(); 
-     fprintf(file, "%s\n", var->getCString());
+     var = t->toString();
+     fprintf(file, "%s\n", var->c_str());
      delete var;
   }
 }
 
-GBool HtmlOutputDev::dumpDocOutline(PDFDoc* doc)
+bool HtmlOutputDev::dumpDocOutline(PDFDoc* doc)
 { 
-#ifdef DISABLE_OUTLINE
-	return gFalse;
-#else
 	FILE * output = nullptr;
-	GBool bClose = gFalse;
+	bool bClose = false;
 
 	if (!ok)
-                return gFalse;
+                return false;
   
 	Outline *outline = doc->getOutline();
 	if (!outline)
-		return gFalse;
+		return false;
 
-	const GooList *outlines = outline->getItems();
+	const std::vector<OutlineItem*> *outlines = outline->getItems();
 	if (!outlines)
-		return gFalse;
+		return false;
   
 	if (!complexMode || xml)
   	{
@@ -1739,13 +1696,13 @@ GBool HtmlOutputDev::dumpDocOutline(PDFDoc* doc)
 		{
 			GooString *str = Docname->copy();
 			str->append("-outline.html");
-			output = fopen(str->getCString(), "w");
+			output = fopen(str->c_str(), "w");
 			delete str;
 			if (output == nullptr)
-				return gFalse;
-			bClose = gTrue;
+				return false;
+			bClose = true;
 
-			GooString *htmlEncoding =
+			const std::string htmlEncoding =
 				HtmlOutputDev::mapEncodingToHtml(globalParams->getTextEncodingName());
 
 			fprintf(output, "<html xmlns=\"http://www.w3.org/1999/xhtml\" " \
@@ -1754,14 +1711,13 @@ GBool HtmlOutputDev::dumpDocOutline(PDFDoc* doc)
                                 "<title>Document Outline</title>\n"     \
                                 "<meta http-equiv=\"Content-Type\" content=\"text/html; " \
                                 "charset=%s\"/>\n"                      \
-                                "</head>\n<body>\n", htmlEncoding->getCString());
-			delete htmlEncoding;
+                                "</head>\n<body>\n", htmlEncoding.c_str());
 		}
 	}
  
 	if (!xml)
 	{
-		GBool done = newHtmlOutlineLevel(output, outlines);
+		bool done = newHtmlOutlineLevel(output, outlines);
 		if (done && !complexMode)
 			fputs("<hr/>\n", output);
 	
@@ -1774,16 +1730,12 @@ GBool HtmlOutputDev::dumpDocOutline(PDFDoc* doc)
 	else
 		newXmlOutlineLevel(output, outlines);
 
-	return gTrue;
-#endif
+	return true;
 }
 
-GBool HtmlOutputDev::newHtmlOutlineLevel(FILE *output, const GooList *outlines, int level)
+bool HtmlOutputDev::newHtmlOutlineLevel(FILE *output, const std::vector<OutlineItem*> *outlines, int level)
 {
-#ifdef DISABLE_OUTLINE
-	return gFalse;
-#else
-	GBool atLeastOne = gFalse;
+	bool atLeastOne = false;
 
 	if (level == 1)
 	{
@@ -1792,48 +1744,45 @@ GBool HtmlOutputDev::newHtmlOutlineLevel(FILE *output, const GooList *outlines, 
 	}
 	fputs("<ul>\n",output);
 
-	for (int i = 0; i < outlines->getLength(); i++)
+	for (OutlineItem *item : *outlines)
 	{
-		OutlineItem *item = (OutlineItem*)outlines->get(i);
 		GooString *titleStr = HtmlFont::HtmlFilter(item->getTitle(),
 							   item->getTitleLength());
 
 		GooString *linkName = nullptr;;
-        int page = getOutlinePageNum(item);
-        if (page > 0)
+        const int itemPage = getOutlinePageNum(item);
+        if (itemPage > 0)
         {
 				/*		complex		simple
 				frames		file-4.html	files.html#4
 				noframes	file.html#4	file.html#4
 				*/
-				linkName=basename(Docname);
-				GooString *str=GooString::fromInt(page);
+				linkName = new GooString(gbasename(Docname->c_str()));
 				if (noframes) {
 					linkName->append(".html#");
-					linkName->append(str);
+					linkName->append(std::to_string(itemPage));
 				} else {
 					if( complexMode ) {
 						linkName->append("-");
-						linkName->append(str);
+						linkName->append(std::to_string(itemPage));
 						linkName->append(".html");
 					} else {
 						linkName->append("s.html#");
-						linkName->append(str);
+						linkName->append(std::to_string(itemPage));
 					}
 				}
-				delete str;
 		}
 
 		fputs("<li>",output);
 		if (linkName)
-			fprintf(output,"<a href=\"%s\">", linkName->getCString());
-		fputs(titleStr->getCString(),output);
+			fprintf(output,"<a href=\"%s\">", linkName->c_str());
+		fputs(titleStr->c_str(),output);
 		if (linkName) {
 			fputs("</a>",output);
 			delete linkName;
 		}
 		delete titleStr;
-		atLeastOne = gTrue;
+		atLeastOne = true;
 
 		item->open();
 		if (item->hasKids() && item->getKids())
@@ -1847,28 +1796,25 @@ GBool HtmlOutputDev::newHtmlOutlineLevel(FILE *output, const GooList *outlines, 
 	fputs("</ul>\n",output);
 
 	return atLeastOne;
-#endif
 }
 
-void HtmlOutputDev::newXmlOutlineLevel(FILE *output, const GooList *outlines)
+void HtmlOutputDev::newXmlOutlineLevel(FILE *output, const std::vector<OutlineItem*> *outlines)
 {
-#ifndef DISABLE_OUTLINE
     fputs("<outline>\n", output);
 
-    for (int i = 0; i < outlines->getLength(); i++)
+    for (OutlineItem *item : *outlines)
     {
-        OutlineItem *item     = (OutlineItem*)outlines->get(i);
         GooString   *titleStr = HtmlFont::HtmlFilter(item->getTitle(),
                                                      item->getTitleLength());
-        int page = getOutlinePageNum(item);
-        if (page > 0)
+        const int itemPage = getOutlinePageNum(item);
+        if (itemPage > 0)
         {
             fprintf(output, "<item page=\"%d\">%s</item>\n",
-                    page, titleStr->getCString());
+                    itemPage, titleStr->c_str());
         }
         else
         {
-            fprintf(output, "<item>%s</item>\n", titleStr->getCString());
+            fprintf(output, "<item>%s</item>\n", titleStr->c_str());
         }
         delete titleStr;
 
@@ -1881,27 +1827,25 @@ void HtmlOutputDev::newXmlOutlineLevel(FILE *output, const GooList *outlines)
     }    
 
     fputs("</outline>\n", output);
-#endif
 }
 
-#ifndef DISABLE_OUTLINE
 int HtmlOutputDev::getOutlinePageNum(OutlineItem *item)
 {
     const LinkAction *action   = item->getAction();
     const LinkGoTo   *link     = nullptr;
-    LinkDest   *linkdest = nullptr;
+    std::unique_ptr<LinkDest> linkdest;
     int         pagenum  = -1;
 
     if (!action || action->getKind() != actionGoTo)
         return pagenum;
 
-    link = dynamic_cast<const LinkGoTo*>(action);
+    link = static_cast<const LinkGoTo*>(action);
 
     if (!link || !link->isOk())
         return pagenum;
 
     if (link->getDest())
-        linkdest = link->getDest()->copy();
+        linkdest = std::unique_ptr<LinkDest>(link->getDest()->copy());
     else if (link->getNamedDest())
         linkdest = catalog->findDest(link->getNamedDest());
 
@@ -1909,13 +1853,11 @@ int HtmlOutputDev::getOutlinePageNum(OutlineItem *item)
         return pagenum;
 
     if (linkdest->isPageRef()) {
-        Ref pageref = linkdest->getPageRef();
-        pagenum = catalog->findPage(pageref.num, pageref.gen);
+        const Ref pageref = linkdest->getPageRef();
+        pagenum = catalog->findPage(pageref);
     } else {
         pagenum = linkdest->getPageNum();
     }
 
-    delete linkdest;
     return pagenum;
 }
-#endif

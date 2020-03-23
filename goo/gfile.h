@@ -25,6 +25,7 @@
 // Copyright (C) 2017 Christoph Cullmann <cullmann@kde.org>
 // Copyright (C) 2017 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2018 Mojca Miklavec <mojca@macports.org>
+// Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -35,10 +36,10 @@
 #define GFILE_H
 
 #include "poppler-config.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <time.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstddef>
+#include <ctime>
 extern "C" {
 #if defined(_WIN32)
 #  include <sys/stat.h>
@@ -50,15 +51,10 @@ extern "C" {
 #    endif
 #    include <windows.h>
 #  endif
-#elif defined(ACORN)
-#elif defined(MACOS)
-#  include <ctime.h>
 #else
 #  include <unistd.h>
 #  include <sys/types.h>
-#  if defined(VMS)
-#    include "vms_dirent.h"
-#  elif defined(HAVE_DIRENT_H)
+#  if defined(HAVE_DIRENT_H)
 #    include <dirent.h>
 #    define NAMLEN(d) strlen((d)->d_name)
 #  else
@@ -76,44 +72,23 @@ extern "C" {
 #  endif
 #endif
 }
-#include "gtypes.h"
 
 class GooString;
 
-//------------------------------------------------------------------------
+/* Integer type for all file offsets and file sizes */
+typedef long long Goffset;
 
-// Get current directory.
-extern GooString *getCurrentDir();
+//------------------------------------------------------------------------
 
 // Append a file name to a path string.  <path> may be an empty
 // string, denoting the current directory).  Returns <path>.
 extern GooString *appendToPath(GooString *path, const char *fileName);
 
-// Grab the path from the front of the file name.  If there is no
-// directory component in <fileName>, returns an empty string.
-extern GooString *grabPath(char *fileName);
-
-// Is this an absolute path or file name?
-extern GBool isAbsolutePath(char *path);
-
-// Get the modification time for <fileName>.  Returns 0 if there is an
-// error.
-extern time_t getModTime(char *fileName);
-
-// Create a temporary file and open it for writing.  If <ext> is not
-// NULL, it will be used as the file name extension.  Returns both the
-// name and the file pointer.  For security reasons, all writing
-// should be done to the returned file pointer; the file may be
-// reopened later for reading, but not for writing.  The <mode> string
-// should be "w" or "wb".  Returns true on success.
-extern GBool openTempFile(GooString **name, FILE **f, const char *mode);
-
-#ifdef _WIN32
-// Convert a file name from Latin-1 to UTF-8.
-extern GooString *fileNameToUTF8(char *path);
-
-// Convert a file name from UCS-2 to UTF-8.
-extern GooString *fileNameToUTF8(wchar_t *path);
+#ifndef _WIN32
+// Open a file descriptor
+// Could be implemented on WIN32 too, but the only external caller of
+// this function is not used on WIN32
+extern int openFileDescriptor(const char *path, int flags);
 #endif
 
 // Open a file.  On Windows, this converts the path from UTF-8 to

@@ -6,7 +6,9 @@
 //
 // Copyright 2010, 2012 Hib Eris <hib@hiberis.nl>
 // Copyright 2015 Jason Crain <jason@aquaticape.us>
-// Copyright 2017 Albert Astals Cid <aacid@kde.org>
+// Copyright 2017, 2019 Albert Astals Cid <aacid@kde.org>
+// Copyright 2019 Adam Reichold <adam.reichold@t-online.de>
+// Copyright 2019 Even Rouault <even.rouault@spatialys.com>
 //
 //========================================================================
 
@@ -24,8 +26,8 @@ Linearization::Linearization (BaseStream *str)
 
   str->reset();
   parser = new Parser(nullptr,
-      new Lexer(nullptr, str->makeSubStream(str->getStart(), gFalse, 0, Object(objNull))),
-      gFalse);
+      str->makeSubStream(str->getStart(), false, 0, Object(objNull)),
+      false);
   Object obj1 = parser->getObj();
   Object obj2 = parser->getObj();
   Object obj3 = parser->getObj();
@@ -35,6 +37,8 @@ Linearization::Linearization (BaseStream *str)
     if (!(obj5.isNum() && obj5.getNum() > 0)) {
        linDict.setToNull();
     }
+  } else {
+    linDict.setToNull();
   }
   delete parser;
 }
@@ -43,7 +47,7 @@ Linearization:: ~Linearization()
 {
 }
 
-Guint Linearization::getLength()
+unsigned int Linearization::getLength() const
 {
   if (!linDict.isDict()) return 0;
 
@@ -57,7 +61,7 @@ Guint Linearization::getLength()
   }
 }
 
-Guint Linearization::getHintsOffset()
+unsigned int Linearization::getHintsOffset() const
 {
   int hintsOffset;
 
@@ -76,7 +80,7 @@ Guint Linearization::getHintsOffset()
   return hintsOffset;
 }
 
-Guint Linearization::getHintsLength()
+unsigned int Linearization::getHintsLength() const
 {
   int hintsLength;
 
@@ -95,7 +99,7 @@ Guint Linearization::getHintsLength()
   return hintsLength;
 }
 
-Guint Linearization::getHintsOffset2()
+unsigned int Linearization::getHintsOffset2() const
 {
   int hintsOffset2 = 0; // default to 0
 
@@ -115,7 +119,7 @@ Guint Linearization::getHintsOffset2()
   return hintsOffset2;
 }
 
-Guint Linearization::getHintsLength2()
+unsigned int Linearization::getHintsLength2() const
 {
   int hintsLength2 = 0; // default to 0
 
@@ -135,7 +139,7 @@ Guint Linearization::getHintsLength2()
   return hintsLength2;
 }
 
-int Linearization::getObjectNumberFirst()
+int Linearization::getObjectNumberFirst() const
 {
   int objectNumberFirst = 0;
   if (linDict.isDict() &&
@@ -148,7 +152,7 @@ int Linearization::getObjectNumberFirst()
   }
 }
 
-Guint Linearization::getEndFirst()
+unsigned int Linearization::getEndFirst() const
 {
   int pageEndFirst = 0;
   if (linDict.isDict() &&
@@ -161,7 +165,7 @@ Guint Linearization::getEndFirst()
   }
 }
 
-int Linearization::getNumPages()
+int Linearization::getNumPages() const
 {
   int numPages = 0;
   if (linDict.isDict() &&
@@ -174,7 +178,7 @@ int Linearization::getNumPages()
   }
 }
 
-Guint Linearization::getMainXRefEntriesOffset()
+unsigned int Linearization::getMainXRefEntriesOffset() const
 {
   int mainXRefEntriesOffset = 0;
   if (linDict.isDict() &&
@@ -187,7 +191,7 @@ Guint Linearization::getMainXRefEntriesOffset()
   }
 }
 
-int Linearization::getPageFirst()
+int Linearization::getPageFirst() const
 {
   int pageFirst = 0; // Optional, defaults to 0.
 

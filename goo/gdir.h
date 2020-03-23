@@ -25,6 +25,7 @@
 // Copyright (C) 2017 Christoph Cullmann <cullmann@kde.org>
 // Copyright (C) 2017 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2018 Mojca Miklavec <mojca@macports.org>
+// Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -35,7 +36,6 @@
 #define GDIR_H
 
 #include "poppler-config.h"
-#include "gtypes.h"
 
 class GooString;
 
@@ -46,45 +46,42 @@ class GooString;
 class GDirEntry {
 public:
 
-  GDirEntry(char *dirPath, char *nameA, GBool doStat);
+  GDirEntry(const char *dirPath, const char *nameA, bool doStat);
   ~GDirEntry();
-  GooString *getName() { return name; }
-  GooString *getFullPath() { return fullPath; }
-  GBool isDir() { return dir; }
+
+  GDirEntry(const GDirEntry &other) = delete;
+  GDirEntry& operator=(const GDirEntry &other) = delete;
+
+  const GooString *getName() const { return name; }
+  const GooString *getFullPath() const { return fullPath; }
+  bool isDir() const { return dir; }
 
 private:
-  GDirEntry(const GDirEntry &other);
-  GDirEntry& operator=(const GDirEntry &other);
-
   GooString *name;		// dir/file name
   GooString *fullPath;
-  GBool dir;			// is it a directory?
+  bool dir;			// is it a directory?
 };
 
 class GDir {
 public:
 
-  GDir(char *name, GBool doStatA = gTrue);
+  GDir(const char *name, bool doStatA = true);
   ~GDir();
+
+  GDir(const GDir &other) = delete;
+  GDir& operator=(const GDir &other) = delete;
+
   GDirEntry *getNextEntry();
   void rewind();
 
 private:
-  GDir(const GDir &other);
-  GDir& operator=(const GDir &other);
-
   GooString *path;		// directory path
-  GBool doStat;			// call stat() for each entry?
+  bool doStat;			// call stat() for each entry?
 #if defined(_WIN32)
   WIN32_FIND_DATAA ffd;
   HANDLE hnd;
-#elif defined(ACORN)
-#elif defined(MACOS)
 #else
   DIR *dir;			// the DIR structure from opendir()
-#ifdef VMS
-  GBool needParent;		// need to return an entry for [-]
-#endif
 #endif
 };
 

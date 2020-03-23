@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009-2011, Pino Toscano <pino@kde.org>
- * Copyright (C) 2018, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2020, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2020, Adam Reichold <adam.reichold@t-online.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +26,7 @@
 #include "poppler-config.h"
 #include "GooString.h"
 #include "PDFDoc.h"
+#include "GlobalParams.h"
 
 #include <vector>
 
@@ -34,20 +36,7 @@ namespace poppler
 class document;
 class embedded_file;
 
-class initer
-{
-public:
-    initer();
-    ~initer();
-
-    initer(const initer &) = delete;
-    initer& operator=(const initer &) = delete;
-
-private:
-    static unsigned int count;
-};
-
-class document_private : private initer
+class document_private : private GlobalParamsIniter
 {
 public:
     document_private(GooString *file_path, const std::string &owner_password,
@@ -67,6 +56,8 @@ public:
     int raw_doc_data_length;
     bool is_locked;
     std::vector<embedded_file *> embedded_files;
+private:
+    document_private();
 };
 
 }

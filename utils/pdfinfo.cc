@@ -15,7 +15,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2006 Dom Lachowicz <cinamod@hotmail.com>
-// Copyright (C) 2007-2010, 2012, 2016-2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2007-2010, 2012, 2016-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2011 Vittal Aithal <vittal.aithal@cognidox.com>
 // Copyright (C) 2012, 2013, 2016-2018 Adrian Johnson <ajohnson@redneon.com>
@@ -25,6 +25,9 @@
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2018 Evangelos Rigas <erigas@rnd2.org>
+// Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
+// Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright (C) 2019 Thomas Fischer <fischer@unix-ag.uni-kl.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -33,12 +36,12 @@
 
 #include "config.h"
 #include <poppler-config.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <string.h>
-#include <time.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstddef>
+#include <cstring>
+#include <ctime>
+#include <cmath>
 #include <map>
 #include "parseargs.h"
 #include "printencodings.h"
@@ -69,20 +72,20 @@
 
 static int firstPage = 1;
 static int lastPage = 0;
-static GBool printBoxes = gFalse;
-static GBool printMetadata = gFalse;
-static GBool printJS = gFalse;
-static GBool isoDates = gFalse;
-static GBool rawDates = gFalse;
+static bool printBoxes = false;
+static bool printMetadata = false;
+static bool printJS = false;
+static bool isoDates = false;
+static bool rawDates = false;
 static char textEncName[128] = "";
 static char ownerPassword[33] = "\001";
 static char userPassword[33] = "\001";
-static GBool printVersion = gFalse;
-static GBool printHelp = gFalse;
-static GBool printEnc = gFalse;
-static GBool printStructure = gFalse;
-static GBool printStructureText = gFalse;
-static GBool printDests = gFalse;
+static bool printVersion = false;
+static bool printHelp = false;
+static bool printEnc = false;
+static bool printStructure = false;
+static bool printStructureText = false;
+static bool printDests = false;
 
 static const ArgDesc argDesc[] = {
   {"-f",      argInt,      &firstPage,        0,
@@ -127,7 +130,7 @@ static const ArgDesc argDesc[] = {
 };
 
 static void printInfoString(Dict *infoDict, const char *key, const char *text,
-			    UnicodeMap *uMap) {
+			    const UnicodeMap *uMap) {
   const GooString *s1;
   Unicode *u;
   char buf[8];
@@ -158,7 +161,7 @@ static void printInfoDate(Dict *infoDict, const char *key, const char *text) {
   Object obj = infoDict->lookup(key);
   if (obj.isString()) {
     fputs(text, stdout);
-    s = obj.getString()->getCString();
+    s = obj.getString()->c_str();
     // TODO do something with the timezone info
     if ( parseDateString( s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute ) ) {
       tmStruct.tm_year = year - 1900;
@@ -199,7 +202,7 @@ static void printISODate(Dict *infoDict, const char *key, const char *text)
   Object obj = infoDict->lookup(key);
   if (obj.isString()) {
     fputs(text, stdout);
-    s = obj.getString()->getCString();
+    s = obj.getString()->c_str();
     if ( parseDateString( s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute ) ) {
       fprintf(stdout, "%04d-%02d-%02dT%02d:%02d:%02d", year, mon, day, hour, min, sec);
       if (tz_hour == 0 && tz_minute == 0) {
@@ -216,7 +219,7 @@ static void printISODate(Dict *infoDict, const char *key, const char *text)
   }
 }
 
-static void printBox(const char *text, PDFRectangle *box) {
+static void printBox(const char *text, const PDFRectangle *box) {
   printf("%s%8.2f %8.2f %8.2f %8.2f\n",
 	 text, box->x1, box->y1, box->x2, box->y2);
 }
@@ -234,7 +237,7 @@ static void printAttribute(const Attribute *attribute, unsigned indent)
   printf(" /%s ", attribute->getTypeName());
   if (attribute->getType() == Attribute::UserProperty) {
     GooString *name = attribute->getName();
-    printf("(%s) ", name->getCString());
+    printf("(%s) ", name->c_str());
     delete name;
   }
   attribute->getValue()->print(stdout);
@@ -254,10 +257,10 @@ static void printStruct(const StructElement *element, unsigned indent) {
   }
 
   if (printStructureText && element->isContent()) {
-    GooString *text = element->getText(gFalse);
+    GooString *text = element->getText(false);
     printIndent(indent);
     if (text) {
-      printf("\"%s\"\n", text->getCString());
+      printf("\"%s\"\n", text->c_str());
     } else {
       printf("(No content?)\n");
     }
@@ -268,10 +271,10 @@ static void printStruct(const StructElement *element, unsigned indent) {
       printIndent(indent);
       printf("%s", element->getTypeName());
       if (element->getID()) {
-          printf(" <%s>", element->getID()->getCString());
+          printf(" <%s>", element->getID()->c_str());
       }
       if (element->getTitle()) {
-          printf(" \"%s\"", element->getTitle()->getCString());
+          printf(" \"%s\"", element->getTitle()->c_str());
       }
       if (element->getRevision() > 0) {
           printf(" r%u", element->getRevision());
@@ -300,7 +303,7 @@ struct GooStringCompare {
   }
 };
 
-static void printLinkDest(LinkDest *dest) {
+static void printLinkDest(const std::unique_ptr<LinkDest>& dest) {
   GooString s;
 
   switch (dest->getKind()) {
@@ -368,33 +371,33 @@ static void printLinkDest(LinkDest *dest) {
   s.append("                                ");
   s.setChar(26, ']');
   s.setChar(27, '\0');
-  printf("%s", s.getCString());
+  printf("%s", s.c_str());
 }
 
-static void printDestinations(PDFDoc *doc, UnicodeMap *uMap) {
-  std::map<Ref,std::map<GooString*,LinkDest*,GooStringCompare> > map;
+static void printDestinations(PDFDoc *doc, const UnicodeMap *uMap) {
+  std::map<Ref,std::map<GooString*,std::unique_ptr<LinkDest>,GooStringCompare> > map;
 
   int numDests = doc->getCatalog()->numDestNameTree();
   for (int i = 0; i < numDests; i++) {
     GooString *name = new GooString(doc->getCatalog()->getDestNameTreeName(i));
-    LinkDest *dest = doc->getCatalog()->getDestNameTreeDest(i);
+    std::unique_ptr<LinkDest> dest = doc->getCatalog()->getDestNameTreeDest(i);
     if (dest && dest->isPageRef()) {
-      map[dest->getPageRef()].insert(std::make_pair(name, dest));
+      Ref pageRef = dest->getPageRef();
+      map[pageRef].insert(std::make_pair(name, std::move(dest)));
     } else {
       delete name;
-      delete dest;
     }
   }
 
   numDests = doc->getCatalog()->numDests();
   for (int i = 0; i < numDests; i++) {
     GooString *name = new GooString(doc->getCatalog()->getDestsName(i));
-    LinkDest *dest = doc->getCatalog()->getDestsDest(i);
+    std::unique_ptr<LinkDest> dest = doc->getCatalog()->getDestsDest(i);
     if (dest && dest->isPageRef()) {
-      map[dest->getPageRef()].insert(std::make_pair(name, dest));
+      Ref pageRef = dest->getPageRef();
+      map[pageRef].insert(std::make_pair(name, std::move(dest)));
     } else {
       delete name;
-      delete dest;
     }
   }
 
@@ -418,14 +421,13 @@ static void printDestinations(PDFDoc *doc, UnicodeMap *uMap) {
 	  gfree(u);
 	  printf("\"\n");
 	  delete it.first;
-	  delete it.second;
 	}
       }
     }
   }
 }
 
-static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
+static void printPdfSubtype(PDFDoc *doc, const UnicodeMap *uMap) {
   const Object info = doc->getDocInfo();
   if (info.isDict()) {
     const PDFSubtype pdftype = doc->getPDFSubtype();
@@ -445,33 +447,33 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
     {
       case subtypePDFA:
         printInfoString(info.getDict(), "GTS_PDFA1Version", "PDF subtype:    ", uMap);
-        typeExp.reset( new GooString("ISO 19005 - Electronic document file format for long-term preservation (PDF/A)") );
-        standard.reset(  new GooString("ISO 19005") );
-        abbr.reset( new GooString("PDF/A") );
+        typeExp = std::make_unique<GooString>("ISO 19005 - Electronic document file format for long-term preservation (PDF/A)");
+        standard = std::make_unique<GooString>("ISO 19005");
+        abbr = std::make_unique<GooString>("PDF/A");
         break;
       case subtypePDFE:
         printInfoString(info.getDict(), "GTS_PDFEVersion", "PDF subtype:    ", uMap);
-        typeExp.reset( new GooString("ISO 24517 - Engineering document format using PDF (PDF/E)") );
-        standard.reset( new GooString("ISO 24517") );
-        abbr.reset( new GooString("PDF/E") );
+        typeExp = std::make_unique<GooString>("ISO 24517 - Engineering document format using PDF (PDF/E)");
+        standard = std::make_unique<GooString>("ISO 24517");
+        abbr = std::make_unique<GooString>("PDF/E");
         break;
       case subtypePDFUA:
         printInfoString(info.getDict(), "GTS_PDFUAVersion", "PDF subtype:    ", uMap);
-        typeExp.reset( new GooString("ISO 14289 - Electronic document file format enhancement for accessibility (PDF/UA)") );
-        standard.reset( new GooString("ISO 14289") );
-        abbr.reset( new GooString("PDF/UA") );
+        typeExp = std::make_unique<GooString>("ISO 14289 - Electronic document file format enhancement for accessibility (PDF/UA)");
+        standard = std::make_unique<GooString>("ISO 14289");
+        abbr = std::make_unique<GooString>("PDF/UA");
         break;
       case subtypePDFVT:
         printInfoString(info.getDict(), "GTS_PDFVTVersion", "PDF subtype:    ", uMap);
-        typeExp.reset( new GooString("ISO 16612 - Electronic document file format for variable data exchange (PDF/VT)") );
-        standard.reset( new GooString("ISO 16612") );
-        abbr.reset( new GooString("PDF/VT") );
+        typeExp = std::make_unique<GooString>("ISO 16612 - Electronic document file format for variable data exchange (PDF/VT)");
+        standard = std::make_unique<GooString>("ISO 16612");
+        abbr = std::make_unique<GooString>("PDF/VT");
         break;
       case subtypePDFX:
         printInfoString(info.getDict(), "GTS_PDFXVersion", "PDF subtype:    ", uMap);
-        typeExp.reset( new GooString("ISO 15930 - Electronic document file format for prepress digital data exchange (PDF/X)") );
-        standard.reset( new GooString("ISO 15930") );
-        abbr.reset( new GooString("PDF/X") );
+        typeExp = std::make_unique<GooString>("ISO 15930 - Electronic document file format for prepress digital data exchange (PDF/X)");
+        standard = std::make_unique<GooString>("ISO 15930");
+        abbr = std::make_unique<GooString>("PDF/X");
         break;
       case subtypeNone:
       case subtypeNull:
@@ -535,13 +537,13 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
       case subtypePDFA:
           switch (subpart) {
           case subtypePart1:
-            part.reset( new GooString("Use of PDF 1.4") );
+            part = std::make_unique<GooString>("Use of PDF 1.4");
             break;
           case subtypePart2:
-            part.reset( new GooString("Use of ISO 32000-1") );
+            part = std::make_unique<GooString>("Use of ISO 32000-1");
             break;
           case subtypePart3:
-            part.reset( new GooString("Use of ISO 32000-1 with support for embedded files") );
+            part = std::make_unique<GooString>("Use of ISO 32000-1 with support for embedded files");
             break;
           default:
             break;
@@ -550,7 +552,7 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
       case subtypePDFE:
         switch (subpart) {
           case subtypePart1:
-            part.reset( new GooString("Use of PDF 1.6") );
+            part = std::make_unique<GooString>("Use of PDF 1.6");
             break;
           default:
             break;
@@ -559,13 +561,13 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
       case subtypePDFUA:
         switch (subpart) {
           case subtypePart1:
-            part.reset( new GooString("Use of ISO 32000-1") );
+            part = std::make_unique<GooString>("Use of ISO 32000-1");
             break;
           case subtypePart2:
-            part.reset( new GooString("Use of ISO 32000-2") );
+            part = std::make_unique<GooString>("Use of ISO 32000-2");
             break;
           case subtypePart3:
-            part.reset( new GooString("Use of ISO 32000-1 with support for embedded files") );
+            part = std::make_unique<GooString>("Use of ISO 32000-1 with support for embedded files");
             break;
           default:
             break;
@@ -574,13 +576,13 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
       case subtypePDFVT:
         switch (subpart) {
           case subtypePart1:
-            part.reset( new GooString("Using PPML 2.1 and PDF 1.4") );
+            part = std::make_unique<GooString>("Using PPML 2.1 and PDF 1.4");
             break;
           case subtypePart2:
-            part.reset( new GooString("Using PDF/X-4 and PDF/X-5 (PDF/VT-1 and PDF/VT-2)") );
+            part = std::make_unique<GooString>("Using PDF/X-4 and PDF/X-5 (PDF/VT-1 and PDF/VT-2)");
             break;
           case subtypePart3:
-            part.reset( new GooString("Using PDF/X-6 (PDF/VT-3)") );
+            part = std::make_unique<GooString>("Using PDF/X-6 (PDF/VT-3)");
             break;
           default:
             break;
@@ -589,25 +591,25 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
       case subtypePDFX:
         switch (subpart) {
           case subtypePart1:
-            part.reset( new GooString("Complete exchange using CMYK data (PDF/X-1 and PDF/X-1a)") );
+            part = std::make_unique<GooString>("Complete exchange using CMYK data (PDF/X-1 and PDF/X-1a)");
             break;
           case subtypePart3:
-            part.reset( new GooString("Complete exchange suitable for colour-managed workflows (PDF/X-3)") );
+            part = std::make_unique<GooString>("Complete exchange suitable for colour-managed workflows (PDF/X-3)");
             break;
           case subtypePart4:
-            part.reset( new GooString("Complete exchange of CMYK and spot colour printing data using PDF 1.4 (PDF/X-1a)") );
+            part = std::make_unique<GooString>("Complete exchange of CMYK and spot colour printing data using PDF 1.4 (PDF/X-1a)");
             break;
           case subtypePart5:
-            part.reset( new GooString("Partial exchange of printing data using PDF 1.4 (PDF/X-2) [Withdrawn]") );
+            part = std::make_unique<GooString>("Partial exchange of printing data using PDF 1.4 (PDF/X-2) [Withdrawn]");
             break;
           case subtypePart6:
-            part.reset( new GooString("Complete exchange of printing data suitable for colour-managed workflows using PDF 1.4 (PDF/X-3)") );
+            part = std::make_unique<GooString>("Complete exchange of printing data suitable for colour-managed workflows using PDF 1.4 (PDF/X-3)");
             break;
           case subtypePart7:
-            part.reset( new GooString("Complete exchange of printing data (PDF/X-4) and partial exchange of printing data with external profile reference (PDF/X-4p) using PDF 1.6") );
+            part = std::make_unique<GooString>("Complete exchange of printing data (PDF/X-4) and partial exchange of printing data with external profile reference (PDF/X-4p) using PDF 1.6");
             break;
           case subtypePart8:
-            part.reset( new GooString("Partial exchange of printing data using PDF 1.6 (PDF/X-5)") );
+            part = std::make_unique<GooString>("Partial exchange of printing data using PDF 1.6 (PDF/X-5)");
             break;
           default:
             break;
@@ -621,25 +623,25 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
     switch (doc->getPDFSubtypeConformance())
     {
       case subtypeConfA:
-        confExp.reset( new GooString("Level A, Accessible") );
+        confExp = std::make_unique<GooString>("Level A, Accessible");
         break;
       case subtypeConfB:
-        confExp.reset( new GooString("Level B, Basic") );
+        confExp = std::make_unique<GooString>("Level B, Basic");
         break;
       case subtypeConfG:
-        confExp.reset( new GooString("Level G, External graphical content") );
+        confExp = std::make_unique<GooString>("Level G, External graphical content");
         break;
       case subtypeConfN:
-        confExp.reset( new GooString("Level N, External ICC profile") );
+        confExp = std::make_unique<GooString>("Level N, External ICC profile");
         break;
       case subtypeConfP:
-        confExp.reset( new GooString("Level P, Embedded ICC profile") );
+        confExp = std::make_unique<GooString>("Level P, Embedded ICC profile");
         break;
       case subtypeConfPG:
-        confExp.reset( new GooString("Level PG, Embedded ICC profile and external graphical content") );
+        confExp = std::make_unique<GooString>("Level PG, Embedded ICC profile and external graphical content");
         break;
       case subtypeConfU:
-        confExp.reset( new GooString("Level U, Unicode support") );
+        confExp = std::make_unique<GooString>("Level U, Unicode support");
         break;
       case subtypeConfNone:
       case subtypeConfNull:
@@ -648,22 +650,22 @@ static void printPdfSubtype(PDFDoc *doc, UnicodeMap *uMap) {
         break;
     }
 
-    printf("    Title:         %s\n",typeExp->getCString());
-    printf("    Abbreviation:  %s\n", abbr->getCString());
+    printf("    Title:         %s\n",typeExp->c_str());
+    printf("    Abbreviation:  %s\n", abbr->c_str());
     if (part.get())
-      printf("    Subtitle:      Part %d: %s\n", subpart, part->getCString());
+      printf("    Subtitle:      Part %d: %s\n", subpart, part->c_str());
     else
       printf("    Subtitle:      Part %d\n", subpart);
     printf("    Standard:      %s-%d\n", typeExp->toStr().substr(0,9).c_str(), subpart);
     if (confExp.get())
-      printf("    Conformance:   %s\n", confExp->getCString());
+      printf("    Conformance:   %s\n", confExp->c_str());
   }
 }
 
-static void printInfo(PDFDoc *doc, UnicodeMap *uMap, long long filesize, GBool multiPage) {
+static void printInfo(PDFDoc *doc, const UnicodeMap *uMap, long long filesize, bool multiPage) {
   Page *page;
   char buf[256];
-  double w, h, wISO, hISO;
+  double w, h, wISO, hISO, isoThreshold;
   int pg, i;
   int r;
 
@@ -725,7 +727,7 @@ static void printInfo(PDFDoc *doc, UnicodeMap *uMap, long long filesize, GBool m
   // print encryption info
   printf("Encrypted:      ");
   if (doc->isEncrypted()) {
-    Guchar *fileKey;
+    unsigned char *fileKey;
     CryptAlgorithm encAlgorithm;
     int keyLength;
     doc->getXRef()->getEncryptionParameters(&fileKey, &encAlgorithm, &keyLength);
@@ -747,10 +749,10 @@ static void printInfo(PDFDoc *doc, UnicodeMap *uMap, long long filesize, GBool m
     }
 
     printf("yes (print:%s copy:%s change:%s addNotes:%s algorithm:%s)\n",
-	   doc->okToPrint(gTrue) ? "yes" : "no",
-	   doc->okToCopy(gTrue) ? "yes" : "no",
-	   doc->okToChange(gTrue) ? "yes" : "no",
-	   doc->okToAddNotes(gTrue) ? "yes" : "no",
+	   doc->okToPrint(true) ? "yes" : "no",
+	   doc->okToCopy(true) ? "yes" : "no",
+	   doc->okToChange(true) ? "yes" : "no",
+	   doc->okToAddNotes(true) ? "yes" : "no",
 	   encAlgorithmName);
   } else {
     printf("no\n");
@@ -765,20 +767,22 @@ static void printInfo(PDFDoc *doc, UnicodeMap *uMap, long long filesize, GBool m
     } else {
       printf("Page size:      %g x %g pts", w, h);
     }
-    if ((fabs(w - 612) < 0.1 && fabs(h - 792) < 0.1) ||
-	(fabs(w - 792) < 0.1 && fabs(h - 612) < 0.1)) {
+    if ((fabs(w - 612) < 1 && fabs(h - 792) < 1) ||
+       (fabs(w - 792) < 1 && fabs(h - 612) < 1)) {
       printf(" (letter)");
     } else {
       hISO = sqrt(sqrt(2.0)) * 7200 / 2.54;
       wISO = hISO / sqrt(2.0);
+      isoThreshold = hISO * 0.003; ///< allow for 0.3% error when guessing conformance to ISO 216, A series
       for (i = 0; i <= 6; ++i) {
-	if ((fabs(w - wISO) < 1 && fabs(h - hISO) < 1) ||
-	    (fabs(w - hISO) < 1 && fabs(h - wISO) < 1)) {
+	if ((fabs(w - wISO) < isoThreshold && fabs(h - hISO) < isoThreshold) ||
+	    (fabs(w - hISO) < isoThreshold && fabs(h - wISO) < isoThreshold)) {
 	  printf(" (A%d)", i);
 	  break;
 	}
 	hISO = wISO;
 	wISO /= sqrt(2.0);
+	isoThreshold /= sqrt(2.0);
       }
     }
     printf("\n");
@@ -840,11 +844,11 @@ int main(int argc, char *argv[]) {
   PDFDoc *doc;
   GooString *fileName;
   GooString *ownerPW, *userPW;
-  UnicodeMap *uMap;
+  const UnicodeMap *uMap;
   FILE *f;
-  GBool ok;
+  bool ok;
   int exitCode;
-  GBool multiPage;
+  bool multiPage;
 
   exitCode = 99;
 
@@ -864,14 +868,13 @@ int main(int argc, char *argv[]) {
   }
 
   if (printStructureText)
-    printStructure = gTrue;
+    printStructure = true;
 
   // read config file
-  globalParams = new GlobalParams();
+  globalParams = std::make_unique<GlobalParams>();
 
   if (printEnc) {
     printEncodings();
-    delete globalParams;
     exitCode = 0;
     goto err0;
   }
@@ -924,9 +927,9 @@ int main(int argc, char *argv[]) {
     firstPage = 1;
   }
   if (lastPage == 0) {
-    multiPage = gFalse;
+    multiPage = false;
   } else {
-    multiPage = gTrue;
+    multiPage = true;
   }
   if (lastPage < 1 || lastPage > doc->getNumPages()) {
     lastPage = doc->getNumPages();
@@ -940,9 +943,9 @@ int main(int argc, char *argv[]) {
 
   if (printMetadata) {
     // print the metadata
-    GooString *metadata = doc->readMetadata();
+    const GooString *metadata = doc->readMetadata();
     if (metadata) {
-      fputs(metadata->getCString(), stdout);
+      fputs(metadata->c_str(), stdout);
       fputc('\n', stdout);
       delete metadata;
     }
@@ -964,18 +967,14 @@ int main(int argc, char *argv[]) {
     // print info
     long long filesize = 0;
 
-#ifdef VMS
-    f = fopen(fileName->getCString(), "rb", "ctx=stm");
-#else
-    f = fopen(fileName->getCString(), "rb");
-#endif
+    f = fopen(fileName->c_str(), "rb");
     if (f) {
       Gfseek(f, 0, SEEK_END);
       filesize = Gftell(f);
       fclose(f);
     }
 
-    if (multiPage == gFalse)
+    if (multiPage == false)
       lastPage = 1;
 
     printInfo(doc, uMap, filesize, multiPage);
@@ -984,11 +983,9 @@ int main(int argc, char *argv[]) {
 
   // clean up
  err2:
-  uMap->decRefCnt();
   delete doc;
   delete fileName;
  err1:
-  delete globalParams;
  err0:
 
   return exitCode;

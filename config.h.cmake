@@ -82,9 +82,6 @@
 /* Define to 1 if you have the `mkstemp' function. */
 #cmakedefine HAVE_MKSTEMP 1
 
-/* Define to 1 if you have the `rand_r' function. */
-#cmakedefine HAVE_RAND_R 1
-
 /* Define to 1 if you have the `strcpy_s' function. */
 #cmakedefine HAVE_STRCPY_S 1
 
@@ -120,14 +117,14 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #cmakedefine HAVE_UNISTD_H 1
 
+/* Define to 1 if you have the <codecvt> header file. */
+#cmakedefine HAVE_CODECVT
+
 /* Define to 1 if you have a big endian machine */
 #cmakedefine WORDS_BIGENDIAN 1
 
 /* Define as const if the declaration of iconv() needs const. */
 #define ICONV_CONST ${ICONV_CONST}
-
-/* Enable multithreading support. */
-#cmakedefine MULTITHREADED 1
 
 /* Generate OPI comments in PS output. */
 #cmakedefine OPI_SUPPORT 1
@@ -159,17 +156,11 @@
 /* Support for curl based doc builder is compiled in. */
 #cmakedefine POPPLER_HAS_CURL_SUPPORT 1
 
-/* Include support for CMYK rasterization */
-#cmakedefine SPLASH_CMYK 1
-
 /* Enable word list support. */
 #cmakedefine TEXTOUT_WORD_LIST 1
 
 /* Defines if use cms */
 #cmakedefine USE_CMS 1
-
-/* Use fixed point arithmetic in the Splash backend */
-#cmakedefine USE_FIXEDPOINT 1
 
 /* Use single precision arithmetic in the Splash backend */
 #cmakedefine USE_FLOAT 1

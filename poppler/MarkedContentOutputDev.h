@@ -5,14 +5,13 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright 2013 Igalia S.L.
-// Copyright 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright 2018-2020 Albert Astals Cid <aacid@kde.org>
 //
 //========================================================================
 
 #ifndef MARKEDCONTENTOUTPUTDEV_H
 #define MARKEDCONTENTOUTPUTDEV_H
 
-#include "goo/gtypes.h"
 #include "goo/gmem.h"
 #include "OutputDev.h"
 #include "GfxState.h"
@@ -50,7 +49,7 @@ private:
   // Note: Takes ownership of strings, increases refcount for font.
   TextSpan(GooString *text,
            GfxFont *font,
-           const GfxRGB& color)
+           const GfxRGB color)
       : data(new Data) {
     data->text = text;
     data->font = font;
@@ -90,14 +89,14 @@ typedef std::vector<TextSpan> TextSpanArray;
 class MarkedContentOutputDev: public OutputDev {
 public:
   MarkedContentOutputDev(int mcidA);
-  virtual ~MarkedContentOutputDev();
+  ~MarkedContentOutputDev() override;
 
-  virtual GBool isOk() { return gTrue; }
-  GBool upsideDown() override { return gTrue; }
-  GBool useDrawChar() override { return gTrue; }
-  GBool interpretType3Chars() override { return gFalse; }
-  GBool needNonText() override { return gFalse; }
-  GBool needCharCount() override { return gFalse; }
+  virtual bool isOk() { return true; }
+  bool upsideDown() override { return true; }
+  bool useDrawChar() override { return true; }
+  bool interpretType3Chars() override { return false; }
+  bool needNonText() override { return false; }
+  bool needCharCount() override { return false; }
 
   void startPage(int pageNum, GfxState *state, XRef *xref) override;
   void endPage() override;
@@ -107,7 +106,7 @@ public:
                         double dx, double dy,
                         double ox, double oy,
                         CharCode c, int nBytes,
-                        Unicode *u, int uLen) override;
+                        const Unicode *u, int uLen) override;
 
   void beginMarkedContent(const char *name, Dict *properties) override;
   void endMarkedContent(GfxState *state) override;
@@ -118,7 +117,7 @@ private:
 
   void endSpan();
   bool inMarkedContent() const { return mcidStack.size() > 0; }
-  bool needFontChange(GfxFont* font) const;
+  bool needFontChange(const GfxFont* font) const;
 
   GfxFont         *currentFont;
   GooString       *currentText;
@@ -128,7 +127,7 @@ private:
   std::vector<int> mcidStack;
   double           pageWidth;
   double           pageHeight;
-  UnicodeMap      *unicodeMap;
+  const UnicodeMap *unicodeMap;
 };
 
 #endif /* !MARKEDCONTENTOUTPUTDEV_H */

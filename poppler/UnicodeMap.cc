@@ -14,10 +14,12 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2010 Jakub Wilk <jwilk@jwilk.net>
-// Copyright (C) 2017 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2017-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2017 Jean Ghali <jghali@libertysurf.fr>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+// Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright (C) 2019 Volker Krause <vkrause@kde.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -26,17 +28,12 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include "goo/glibc.h"
 #include "goo/gmem.h"
 #include "goo/gfile.h"
 #include "goo/GooString.h"
-#include "goo/GooList.h"
 #include "Error.h"
 #include "GlobalParams.h"
 #include "UnicodeMap.h"
@@ -48,12 +45,12 @@
 struct UnicodeMapExt {
   Unicode u;			// Unicode char
   char code[maxExtCode];
-  Guint nBytes;
+  unsigned int nBytes;
 };
 
 //------------------------------------------------------------------------
 
-UnicodeMap *UnicodeMap::parse(GooString *encodingNameA) {
+UnicodeMap *UnicodeMap::parse(const std::string &encodingNameA) {
   FILE *f;
   UnicodeMap *map;
   UnicodeMapRange *range;
@@ -66,15 +63,15 @@ UnicodeMap *UnicodeMap::parse(GooString *encodingNameA) {
 
   if (!(f = globalParams->getUnicodeMapFile(encodingNameA))) {
     error(errSyntaxError, -1,
-	  "Couldn't find unicodeMap file for the '{0:t}' encoding",
-	  encodingNameA);
+	  "Couldn't find unicodeMap file for the '{0:s}' encoding",
+	  encodingNameA.c_str());
     return nullptr;
   }
 
-  map = new UnicodeMap(encodingNameA->copy());
+  map = new UnicodeMap(encodingNameA);
 
   size = 8;
-  map->ranges = (UnicodeMapRange *)gmallocn(size, sizeof(UnicodeMapRange));
+  UnicodeMapRange *customRanges = (UnicodeMapRange *)gmallocn(size, sizeof(UnicodeMapRange));
   eMapsSize = 0;
 
   line = 1;
@@ -89,10 +86,10 @@ UnicodeMap *UnicodeMap::parse(GooString *encodingNameA) {
       if (nBytes <= 4) {
 	if (map->len == size) {
 	  size *= 2;
-	  map->ranges = (UnicodeMapRange *)
-	    greallocn(map->ranges, size, sizeof(UnicodeMapRange));
+	  customRanges = (UnicodeMapRange *)
+	    greallocn(customRanges, size, sizeof(UnicodeMapRange));
 	}
-	range = &map->ranges[map->len];
+	range = &customRanges[map->len];
 	sscanf(tok1, "%x", &range->start);
 	sscanf(tok2, "%x", &range->end);
 	sscanf(tok3, "%x", &range->code);
@@ -115,60 +112,57 @@ UnicodeMap *UnicodeMap::parse(GooString *encodingNameA) {
 	++map->eMapsLen;
       } else {
 	error(errSyntaxError, -1,
-	      "Bad line ({0:d}) in unicodeMap file for the '{1:t}' encoding",
-	      line, encodingNameA);
+	      "Bad line ({0:d}) in unicodeMap file for the '{1:s}' encoding",
+	      line, encodingNameA.c_str());
       }
     } else {
       error(errSyntaxError, -1,
-	    "Bad line ({0:d}) in unicodeMap file for the '{1:t}' encoding",
-	    line, encodingNameA);
+	    "Bad line ({0:d}) in unicodeMap file for the '{1:s}' encoding",
+	    line, encodingNameA.c_str());
     }
     ++line;
   }
 
   fclose(f);
 
+  map->ranges = customRanges;
   return map;
 }
 
-UnicodeMap::UnicodeMap(GooString *encodingNameA) {
+UnicodeMap::UnicodeMap(const std::string &encodingNameA) {
   encodingName = encodingNameA;
-  unicodeOut = gFalse;
+  unicodeOut = false;
   kind = unicodeMapUser;
   ranges = nullptr;
   len = 0;
   eMaps = nullptr;
   eMapsLen = 0;
-  refCnt = 1;
 }
 
-UnicodeMap::UnicodeMap(const char *encodingNameA, GBool unicodeOutA,
-		       UnicodeMapRange *rangesA, int lenA) {
-  encodingName = new GooString(encodingNameA);
+UnicodeMap::UnicodeMap(const char *encodingNameA, bool unicodeOutA,
+		       const UnicodeMapRange *rangesA, int lenA) {
+  encodingName = encodingNameA;
   unicodeOut = unicodeOutA;
   kind = unicodeMapResident;
   ranges = rangesA;
   len = lenA;
   eMaps = nullptr;
   eMapsLen = 0;
-  refCnt = 1;
 }
 
-UnicodeMap::UnicodeMap(const char *encodingNameA, GBool unicodeOutA,
+UnicodeMap::UnicodeMap(const char *encodingNameA, bool unicodeOutA,
 		       UnicodeMapFunc funcA) {
-  encodingName = new GooString(encodingNameA);
+  encodingName = encodingNameA;
   unicodeOut = unicodeOutA;
   kind = unicodeMapFunc;
   func = funcA;
   eMaps = nullptr;
   eMapsLen = 0;
-  refCnt = 1;
 }
 
 UnicodeMap::~UnicodeMap() {
-  delete encodingName;
   if (kind == unicodeMapUser && ranges) {
-    gfree(ranges);
+    gfree(const_cast<UnicodeMapRange *>(ranges));
   }
   if (eMaps) {
     gfree(eMaps);
@@ -176,13 +170,12 @@ UnicodeMap::~UnicodeMap() {
 }
 
 UnicodeMap::UnicodeMap(UnicodeMap &&other) noexcept
-  : encodingName{other.encodingName}
+  : encodingName{std::move(other.encodingName)}
   , kind{other.kind}
   , unicodeOut{other.unicodeOut}
   , len{other.len}
   , eMaps{other.eMaps}
   , eMapsLen{other.eMapsLen}
-  , refCnt{1}
 {
   switch (kind) {
   case unicodeMapUser:
@@ -194,7 +187,6 @@ UnicodeMap::UnicodeMap(UnicodeMap &&other) noexcept
     func = other.func;
     break;
   }
-  other.encodingName = nullptr;
   other.eMaps = nullptr;
 }
 
@@ -249,23 +241,13 @@ void UnicodeMap::swap(UnicodeMap &other) noexcept
   swap(eMapsLen, other.eMapsLen);
 }
 
-void UnicodeMap::incRefCnt() {
-  refCnt.fetch_add(1);
+bool UnicodeMap::match(const std::string &encodingNameA) const {
+  return encodingName == encodingNameA;
 }
 
-void UnicodeMap::decRefCnt() {
-  if (refCnt.fetch_sub(1) == 1) {
-    delete this;
-  }
-}
-
-GBool UnicodeMap::match(GooString *encodingNameA) {
-  return !encodingName->cmp(encodingNameA);
-}
-
-int UnicodeMap::mapUnicode(Unicode u, char *buf, int bufSize) {
+int UnicodeMap::mapUnicode(Unicode u, char *buf, int bufSize) const {
   int a, b, m, n, i, j;
-  Guint code;
+  unsigned int code;
 
   if (kind == unicodeMapFunc) {
     return (*func)(u, buf, bufSize);
@@ -313,52 +295,23 @@ int UnicodeMap::mapUnicode(Unicode u, char *buf, int bufSize) {
 //------------------------------------------------------------------------
 
 UnicodeMapCache::UnicodeMapCache() {
-  int i;
-
-  for (i = 0; i < unicodeMapCacheSize; ++i) {
-    cache[i] = nullptr;
-  }
 }
 
 UnicodeMapCache::~UnicodeMapCache() {
-  int i;
-
-  for (i = 0; i < unicodeMapCacheSize; ++i) {
-    if (cache[i]) {
-      cache[i]->decRefCnt();
-    }
+  for (UnicodeMap *map : cache) {
+    delete map;
   }
 }
 
-UnicodeMap *UnicodeMapCache::getUnicodeMap(GooString *encodingName) {
-  UnicodeMap *map;
-  int i, j;
-
-  if (cache[0] && cache[0]->match(encodingName)) {
-    cache[0]->incRefCnt();
-    return cache[0];
-  }
-  for (i = 1; i < unicodeMapCacheSize; ++i) {
-    if (cache[i] && cache[i]->match(encodingName)) {
-      map = cache[i];
-      for (j = i; j >= 1; --j) {
-	cache[j] = cache[j - 1];
-      }
-      cache[0] = map;
-      map->incRefCnt();
+const UnicodeMap *UnicodeMapCache::getUnicodeMap(const std::string &encodingName) {
+  for (UnicodeMap *map : cache) {
+    if (map->match(encodingName)) {
       return map;
     }
   }
-  if ((map = UnicodeMap::parse(encodingName))) {
-    if (cache[unicodeMapCacheSize - 1]) {
-      cache[unicodeMapCacheSize - 1]->decRefCnt();
-    }
-    for (j = unicodeMapCacheSize - 1; j >= 1; --j) {
-      cache[j] = cache[j - 1];
-    }
-    cache[0] = map;
-    map->incRefCnt();
-    return map;
+  UnicodeMap *map = UnicodeMap::parse(encodingName);
+  if (map) {
+    cache.emplace_back(map);
   }
-  return nullptr;
+  return map;
 }

@@ -1,12 +1,14 @@
 /* poppler-form.h: qt interface to poppler
  * Copyright (C) 2007-2008, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2011, 2016, 2017, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2011, 2016, 2017, 2019, 2020, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2012, Adam Reichold <adamreichold@myopera.com>
  * Copyright (C) 2016, Hanno Meyer-Thurow <h.mth@web.de>
  * Copyright (C) 2017, Hans-Ulrich Jüttner <huj@froreich-bioscientia.de>
  * Copyright (C) 2017, Tobias C. Berner <tcberner@freebsd.org>
  * Copyright (C) 2018, Andre Heinecke <aheinecke@intevation.de>
  * Copyright (C) 2018, Chinmoy Ranjan Pradhan <chinmoyrp65@protonmail.com>
+ * Copyright (C) 2018, Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2019 João Netto <joaonetto901@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,7 +28,8 @@
 #ifndef _POPPLER_QT5_FORM_H_
 #define _POPPLER_QT5_FORM_H_
 
-#include <time.h>
+#include <memory>
+#include <ctime>
 #include <QtCore/QDateTime>
 #include <QtCore/QList>
 #include <QtCore/QRectF>
@@ -48,12 +51,39 @@ namespace Poppler {
     class Link;
 
     class FormFieldData;
+    class FormFieldIconData;
+
+    /**
+	 The class containing the appearance information
+
+	 \since 0.79
+     */
+
+    class POPPLER_QT5_EXPORT FormFieldIcon {
+    
+    friend class FormFieldIconData;
+    
+    public:
+
+    	FormFieldIcon(FormFieldIconData *data);
+    	FormFieldIcon(const FormFieldIcon &ffIcon);
+    	~FormFieldIcon();
+
+    	FormFieldIcon& operator=(const FormFieldIcon &ffIcon);
+
+    private:
+
+    	FormFieldIconData *d_ptr;
+    };
     /**
       The base class representing a form field.
 
       \since 0.6
      */
     class POPPLER_QT5_EXPORT FormField {
+
+    friend class FormFieldData;
+
     public:
 
 	/**
@@ -130,6 +160,18 @@ namespace Poppler {
 	void setVisible(bool value);
 
 	/**
+	  Whether this field is printable.
+	  \since 0.79
+	 */	
+	bool isPrintable() const;
+
+	/**
+	  Set whether this field is printable.
+	  \since 0.79
+	 */
+	void setPrintable(bool value);
+
+	/**
 	  The activation action of this form field.
 
 	  \note It may be null.
@@ -164,9 +206,9 @@ namespace Poppler {
 
     protected:
 	/// \cond PRIVATE
-	FormField(FormFieldData &dd);
+	FormField(std::unique_ptr<FormFieldData> dd);
 
-	FormFieldData *m_formData;
+	std::unique_ptr<FormFieldData> m_formData;
 	/// \endcond
 
     private:
@@ -194,7 +236,7 @@ namespace Poppler {
 	/// \cond PRIVATE
 	FormFieldButton(DocumentData *doc, ::Page *p, ::FormWidgetButton *w);
 	/// \endcond
-	~FormFieldButton();
+	~FormFieldButton() override;
 
 	FormType type() const override;
 
@@ -207,6 +249,21 @@ namespace Poppler {
 	 * The caption to be used for the button.
 	 */
 	QString caption() const;
+
+	/**
+	 * Gets the icon used by the button
+	 *
+	 * \since 0.79
+	 */
+	FormFieldIcon icon() const;
+
+	/**
+	 * Sets a new icon for the button, it has to be a icon 
+	 * returned by FormFieldButton::icon.
+	 *
+	 * \since 0.79
+	 */ 
+	void setIcon(const FormFieldIcon &icon);
 
 	/**
 	  The state of the button.
@@ -250,7 +307,7 @@ namespace Poppler {
 	/// \cond PRIVATE
 	FormFieldText(DocumentData *doc, ::Page *p, ::FormWidgetText *w);
 	/// \endcond
-	~FormFieldText();
+	~FormFieldText() override;
 
 	FormType type() const override;
 
@@ -269,6 +326,13 @@ namespace Poppler {
 	  \p text.
 	 */
 	void setText( const QString& text );
+
+	/**
+	  Sets the text inside the Appearance Stream to the specified
+	  \p text
+	  \since 0.80
+	 */
+	void setAppearanceText( const QString& text );
 
 	/**
 	  Whether this text field is a password input, eg its text \b must be
@@ -332,7 +396,7 @@ namespace Poppler {
 	/// \cond PRIVATE
 	FormFieldChoice(DocumentData *doc, ::Page *p, ::FormWidgetChoice *w);
 	/// \endcond
-	~FormFieldChoice();
+	~FormFieldChoice() override;
 
 	FormType type() const override;
 
@@ -345,6 +409,14 @@ namespace Poppler {
 	  The possible choices of the choice field.
 	 */
 	QStringList choices() const;
+
+	/**
+	  The possible choices of the choice field.
+	  The first value of the pair is the display name of the choice,
+	  The second value is the export value (i.e. for use in javascript, etc) of the choice
+	  @since 0.87
+	 */
+	QVector<QPair<QString,QString>> choicesWithExportValues() const;
 
 	/**
 	  Whether this FormFieldChoice::ComboBox is editable, i.e. the user
@@ -404,6 +476,132 @@ namespace Poppler {
     };
 
     /**
+      A helper class to store x509 certificate information.
+
+      \since 0.73
+     */
+    class CertificateInfoPrivate;
+    class POPPLER_QT5_EXPORT CertificateInfo {
+    public:
+
+        /**
+          The algorithm of public key.
+         */
+        enum PublicKeyType
+        {
+            RsaKey,
+            DsaKey,
+            EcKey,
+            OtherKey
+        };
+
+        /**
+          Certificate key usage extensions.
+         */
+        enum KeyUsageExtension
+        {
+            KuDigitalSignature = 0x80,
+            KuNonRepudiation   = 0x40,
+            KuKeyEncipherment  = 0x20,
+            KuDataEncipherment = 0x10,
+            KuKeyAgreement     = 0x08,
+            KuKeyCertSign      = 0x04,
+            KuClrSign          = 0x02,
+            KuEncipherOnly     = 0x01,
+            KuNone             = 0x00
+        };
+        Q_DECLARE_FLAGS(KeyUsageExtensions, KeyUsageExtension)
+
+        /**
+          Predefined keys for elements in an entity's distinguished name.
+         */
+        enum EntityInfoKey
+        {
+          CommonName,
+          DistinguishedName,
+          EmailAddress,
+          Organization,
+        };
+
+        CertificateInfo(CertificateInfoPrivate *priv);
+        ~CertificateInfo();
+
+        /**
+          Returns true if certificate has no contents; otherwise returns false
+         */
+        bool isNull() const;
+
+        /**
+          The certificate version string.
+         */
+        int version() const;
+
+        /**
+          The certificate serial number.
+         */
+        QByteArray serialNumber() const;
+
+        /**
+          Information about the issuer.
+         */
+        QString issuerInfo(EntityInfoKey key) const;
+
+        /**
+          Information about the subject
+         */
+        QString subjectInfo(EntityInfoKey key) const;
+
+        /**
+          The date-time when certificate becomes valid.
+         */
+        QDateTime validityStart() const;
+
+        /**
+          The date-time when certificate expires.
+         */
+        QDateTime validityEnd() const;
+
+        /**
+          The uses allowed for the certificate.
+         */
+        KeyUsageExtensions keyUsageExtensions() const;
+
+        /**
+          The public key value.
+         */
+        QByteArray publicKey() const;
+
+        /**
+          The public key type.
+         */
+        PublicKeyType publicKeyType() const;
+
+        /**
+          The strength of public key in bits.
+         */
+        int publicKeyStrength() const;
+
+        /**
+          Returns true if certificate is self-signed otherwise returns false.
+         */
+        bool isSelfSigned() const;
+
+        /**
+          The DER encoded certificate.
+         */
+        QByteArray certificateData() const;
+
+        CertificateInfo(const CertificateInfo &other);
+        CertificateInfo &operator=(const CertificateInfo &other);
+
+    private:
+        Q_DECLARE_PRIVATE(CertificateInfo)
+
+        QSharedPointer<CertificateInfoPrivate> d_ptr;
+    };
+    Q_DECLARE_OPERATORS_FOR_FLAGS(CertificateInfo::KeyUsageExtensions)
+
+    /**
       A signature validation info helper class.
 
       \since 0.51
@@ -413,7 +611,7 @@ namespace Poppler {
     public:
 
 	/**
-	   The verfication result of the signature.
+	   The verification result of the signature.
 	*/
 	enum SignatureStatus {
 	    SignatureValid,          ///< The signature is cryptographically valid.
@@ -493,7 +691,7 @@ namespace Poppler {
 	QString reason() const;
 
 	/**
-	  The the hash algorithm used for the signature.
+	  The hash algorithm used for the signature.
 	  \since 0.58
 	 */
 	HashAlgorithm hashAlgorithm() const;
@@ -517,10 +715,16 @@ namespace Poppler {
 
 	/**
 	  Checks whether the signature authenticates the total document
-          except for the signature itself.
-          \since 0.58
+	  except for the signature itself.
+	  \since 0.58
 	 */
         bool signsTotalDocument() const;
+
+	/**
+	  The signer certificate info.
+	  \since 0.73
+	*/
+	CertificateInfo certificateInfo() const;
 
 	SignatureValidationInfo(const SignatureValidationInfo &other);
 	SignatureValidationInfo &operator=(const SignatureValidationInfo &other);
@@ -560,7 +764,7 @@ namespace Poppler {
 	/// \cond PRIVATE
 	FormFieldSignature(DocumentData *doc, ::Page *p, ::FormWidgetSignature *w);
 	/// \endcond
-	~FormFieldSignature();
+	~FormFieldSignature() override;
 
 	FormType type() const override;
 

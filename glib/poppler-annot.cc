@@ -264,35 +264,49 @@ _poppler_annot_text_markup_new (Annot *annot)
   return _poppler_create_annot (POPPLER_TYPE_ANNOT_TEXT_MARKUP, annot);
 }
 
+/* If @crop_box parameter is non null, it will add the crop_box offset
+ * to the coordinates of the returned quads */
 static AnnotQuadrilaterals *
-create_annot_quads_from_poppler_quads (GArray *quads)
+create_annot_quads_from_poppler_quads (GArray             *quads,
+                                       const PDFRectangle *crop_box)
 {
-  AnnotQuadrilaterals::AnnotQuadrilateral **quads_array;
-
+  PDFRectangle zerobox;
   g_assert (quads->len > 0);
 
-  quads_array = (AnnotQuadrilaterals::AnnotQuadrilateral **) g_malloc0_n (
-    sizeof (AnnotQuadrilaterals::AnnotQuadrilateral *),
-    quads->len);
+  if (!crop_box) {
+    zerobox = PDFRectangle();
+    crop_box = &zerobox;
+  }
 
+  auto quads_array = std::make_unique<AnnotQuadrilaterals::AnnotQuadrilateral[]>(quads->len);
   for (guint i = 0; i < quads->len; i++) {
     PopplerQuadrilateral *quadrilateral = &g_array_index (quads, PopplerQuadrilateral, i);
 
-    quads_array[i] = new AnnotQuadrilaterals::AnnotQuadrilateral (
-      quadrilateral->p1.x, quadrilateral->p1.y,
-      quadrilateral->p2.x, quadrilateral->p2.y,
-      quadrilateral->p3.x, quadrilateral->p3.y,
-      quadrilateral->p4.x, quadrilateral->p4.y);
+    quads_array[i] = AnnotQuadrilaterals::AnnotQuadrilateral (
+      quadrilateral->p1.x + crop_box->x1, quadrilateral->p1.y + crop_box->y1,
+      quadrilateral->p2.x + crop_box->x1, quadrilateral->p2.y + crop_box->y1,
+      quadrilateral->p3.x + crop_box->x1, quadrilateral->p3.y + crop_box->y1,
+      quadrilateral->p4.x + crop_box->x1, quadrilateral->p4.y + crop_box->y1);
   }
 
-  return new AnnotQuadrilaterals (quads_array, quads->len);
+  return new AnnotQuadrilaterals (std::move(quads_array), quads->len);
 }
 
+/* If @crop_box parameter is non null, it will substract the crop_box offset
+ * from the coordinates of the returned #PopplerQuadrilateral array */
 static GArray *
-create_poppler_quads_from_annot_quads (AnnotQuadrilaterals *quads_array)
+create_poppler_quads_from_annot_quads (AnnotQuadrilaterals *quads_array,
+                                       const PDFRectangle  *crop_box)
 {
   GArray *quads;
   guint   quads_len;
+  PDFRectangle zerobox;
+
+  if (!crop_box) {
+    zerobox = PDFRectangle();
+    crop_box = &zerobox;
+  }
+
 
   quads_len = quads_array->getQuadrilateralsLength();
   quads = g_array_sized_new (FALSE, FALSE,
@@ -303,14 +317,14 @@ create_poppler_quads_from_annot_quads (AnnotQuadrilaterals *quads_array)
   for (guint i = 0; i < quads_len; ++i) {
     PopplerQuadrilateral *quadrilateral = &g_array_index (quads, PopplerQuadrilateral, i);
 
-    quadrilateral->p1.x = quads_array->getX1(i);
-    quadrilateral->p1.y = quads_array->getY1(i);
-    quadrilateral->p2.x = quads_array->getX2(i);
-    quadrilateral->p2.y = quads_array->getY2(i);
-    quadrilateral->p3.x = quads_array->getX3(i);
-    quadrilateral->p3.y = quads_array->getY3(i);
-    quadrilateral->p4.x = quads_array->getX4(i);
-    quadrilateral->p4.y = quads_array->getY4(i);
+    quadrilateral->p1.x = quads_array->getX1(i) - crop_box->x1;
+    quadrilateral->p1.y = quads_array->getY1(i) - crop_box->y1;
+    quadrilateral->p2.x = quads_array->getX2(i) - crop_box->x1;
+    quadrilateral->p2.y = quads_array->getY2(i) - crop_box->y1;
+    quadrilateral->p3.x = quads_array->getX3(i) - crop_box->x1;
+    quadrilateral->p3.y = quads_array->getY3(i) - crop_box->y1;
+    quadrilateral->p4.x = quads_array->getX4(i) - crop_box->x1;
+    quadrilateral->p4.y = quads_array->getY4(i) - crop_box->y1;
   }
 
   return quads;
@@ -947,15 +961,15 @@ create_poppler_color_from_annot_color (AnnotColor *color)
   return poppler_color;
 }
 
-static AnnotColor *
+static std::unique_ptr<AnnotColor>
 create_annot_color_from_poppler_color (PopplerColor *poppler_color)
 {
   if (!poppler_color)
     return nullptr;
 
-  return new AnnotColor ((double)poppler_color->red / 65535,
-                         (double)poppler_color->green / 65535,
-                         (double)poppler_color->blue / 65535);
+  return std::make_unique<AnnotColor>((double)poppler_color->red / 65535,
+                                      (double)poppler_color->green / 65535,
+                                      (double)poppler_color->blue / 65535);
 }
 
 /**
@@ -988,7 +1002,6 @@ void
 poppler_annot_set_color (PopplerAnnot *poppler_annot,
 			 PopplerColor *poppler_color)
 {
-  /* Annot takes ownership of the color */
   poppler_annot->annot->setColor (create_annot_color_from_poppler_color (poppler_color));
 }
 
@@ -1013,6 +1026,28 @@ poppler_annot_get_page_index (PopplerAnnot *poppler_annot)
   return page_num <= 0 ? -1 : page_num - 1;
 }
 
+/* Returns cropbox rect for the page where the passed in @poppler_annot is in,
+ * or NULL when could not retrieve the cropbox */
+const PDFRectangle *
+_poppler_annot_get_cropbox (PopplerAnnot *poppler_annot)
+{
+  int page_index;
+
+  /* A returned zero means annot is not added to any page yet */
+  page_index = poppler_annot->annot->getPageNum();
+
+  if (page_index) {
+    Page *page;
+
+    page = poppler_annot->annot->getDoc()->getPage(page_index);
+    if (page) {
+      return page->getCropBox ();
+    }
+  }
+
+  return nullptr;
+}
+
 /**
  * poppler_annot_get_rectangle:
  * @poppler_annot: a #PopplerAnnot
@@ -1028,15 +1063,23 @@ poppler_annot_get_rectangle (PopplerAnnot     *poppler_annot,
                              PopplerRectangle *poppler_rect)
 {
   PDFRectangle *annot_rect;
+  const PDFRectangle *crop_box;
+  PDFRectangle zerobox;
 
   g_return_if_fail (POPPLER_IS_ANNOT (poppler_annot));
   g_return_if_fail (poppler_rect != nullptr);
 
+  crop_box = _poppler_annot_get_cropbox (poppler_annot);
+  if (!crop_box) {
+    zerobox = PDFRectangle();
+    crop_box = &zerobox;
+  }
+
   annot_rect = poppler_annot->annot->getRect ();
-  poppler_rect->x1 = annot_rect->x1;
-  poppler_rect->x2 = annot_rect->x2;
-  poppler_rect->y1 = annot_rect->y1;
-  poppler_rect->y2 = annot_rect->y2;
+  poppler_rect->x1 = annot_rect->x1 - crop_box->x1;
+  poppler_rect->x2 = annot_rect->x2 - crop_box->x1;
+  poppler_rect->y1 = annot_rect->y1 - crop_box->y1;
+  poppler_rect->y2 = annot_rect->y2 - crop_box->y1;
 }
 
 /**
@@ -1053,11 +1096,22 @@ void
 poppler_annot_set_rectangle (PopplerAnnot     *poppler_annot,
                              PopplerRectangle *poppler_rect)
 {
+  const PDFRectangle *crop_box;
+  PDFRectangle zerobox;
+
   g_return_if_fail (POPPLER_IS_ANNOT (poppler_annot));
   g_return_if_fail (poppler_rect != nullptr);
 
-  poppler_annot->annot->setRect (poppler_rect->x1, poppler_rect->y1,
-                                 poppler_rect->x2, poppler_rect->y2);
+  crop_box = _poppler_annot_get_cropbox (poppler_annot);
+  if (!crop_box) {
+    zerobox = PDFRectangle();
+    crop_box = &zerobox;
+  }
+
+  poppler_annot->annot->setRect (poppler_rect->x1 + crop_box->x1,
+                                 poppler_rect->y1 + crop_box->y1,
+                                 poppler_rect->x2 + crop_box->x1,
+                                 poppler_rect->y2 + crop_box->y1 );
 }
 
 /* PopplerAnnotMarkup */
@@ -1150,15 +1204,13 @@ poppler_annot_markup_set_popup (PopplerAnnotMarkup *poppler_annot,
 				PopplerRectangle   *popup_rect)
 {
   AnnotMarkup *annot;
-  AnnotPopup  *popup;
   PDFRectangle pdf_rect(popup_rect->x1, popup_rect->y1,
 			popup_rect->x2, popup_rect->y2);
 
   g_return_if_fail (POPPLER_IS_ANNOT_MARKUP (poppler_annot));
 
   annot = static_cast<AnnotMarkup *>(POPPLER_ANNOT (poppler_annot)->annot);
-  popup = new AnnotPopup (annot->getDoc(), &pdf_rect);
-  annot->setPopup (popup);
+  annot->setPopup (std::make_unique<AnnotPopup>(annot->getDoc(), &pdf_rect));
 }
 
 /**
@@ -1622,12 +1674,14 @@ poppler_annot_text_markup_set_quadrilaterals (PopplerAnnotTextMarkup *poppler_an
                                               GArray                 *quadrilaterals)
 {
   AnnotTextMarkup *annot;
+  const PDFRectangle* crop_box;
 
   g_return_if_fail (POPPLER_IS_ANNOT_TEXT_MARKUP (poppler_annot));
   g_return_if_fail (quadrilaterals != nullptr && quadrilaterals->len > 0);
 
   annot = static_cast<AnnotTextMarkup *>(POPPLER_ANNOT (poppler_annot)->annot);
-  AnnotQuadrilaterals *quads = create_annot_quads_from_poppler_quads (quadrilaterals);
+  crop_box = _poppler_annot_get_cropbox (POPPLER_ANNOT (poppler_annot));
+  AnnotQuadrilaterals *quads = create_annot_quads_from_poppler_quads (quadrilaterals, crop_box);
   annot->setQuadrilaterals (quads);
   delete quads;
 }
@@ -1647,13 +1701,16 @@ poppler_annot_text_markup_set_quadrilaterals (PopplerAnnotTextMarkup *poppler_an
 GArray *
 poppler_annot_text_markup_get_quadrilaterals (PopplerAnnotTextMarkup *poppler_annot)
 {
+  const PDFRectangle* crop_box;
   AnnotTextMarkup *annot;
 
   g_return_val_if_fail (POPPLER_IS_ANNOT_TEXT_MARKUP (poppler_annot), NULL);
 
   annot = static_cast<AnnotTextMarkup *>(POPPLER_ANNOT (poppler_annot)->annot);
+  crop_box = _poppler_annot_get_cropbox (POPPLER_ANNOT (poppler_annot));
+  AnnotQuadrilaterals *quads = annot->getQuadrilaterals();
 
-  return create_poppler_quads_from_annot_quads (annot->getQuadrilaterals());
+  return create_poppler_quads_from_annot_quads (quads, crop_box);
 }
 
 /* PopplerAnnotFreeText */
@@ -1946,7 +2003,6 @@ poppler_annot_geometry_set_interior_color (PopplerAnnot *poppler_annot,
 
   annot = static_cast<AnnotGeometry *>(POPPLER_ANNOT (poppler_annot)->annot);
 
-  /* Annot takes ownership of the color */
   annot->setInteriorColor (create_annot_color_from_poppler_color (poppler_color));
 }
 

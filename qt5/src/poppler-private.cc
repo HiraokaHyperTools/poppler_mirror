@@ -1,11 +1,14 @@
 /* poppler-private.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
- * Copyright (C) 2006, 2011, 2015, 2017, 2018 by Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006, 2011, 2015, 2017-2019 by Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2008, 2010, 2011, 2014 by Pino Toscano <pino@kde.org>
  * Copyright (C) 2013 by Thomas Freitag <Thomas.Freitag@alfa.de>
  * Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
  * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
+ * Copyright (C) 2018-2020 Adam Reichold <adam.reichold@t-online.de>
+ * Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2019 João Netto <joaonetto901@gmail.com>
  * Inspired on code by
  * Copyright (C) 2004 by Albert Astals Cid <tsdgeos@terra.es>
  * Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
@@ -26,6 +29,7 @@
  */
 
 #include "poppler-private.h"
+#include "poppler-form.h"
 
 #include <QtCore/QByteArray>
 #include <QtCore/QDebug>
@@ -50,15 +54,13 @@ namespace Debug {
 
 }
 
-    static UnicodeMap *utf8Map = nullptr;
-
     void setDebugErrorFunction(PopplerDebugFunc function, const QVariant &closure)
     {
         Debug::debugFunction = function ? function : Debug::qDebugDebugFunction;
         Debug::debugClosure = closure;
     }
 
-    static void qt5ErrorFunction(void * /*data*/, ErrorCategory /*category*/, Goffset pos, char *msg)
+    void qt5ErrorFunction(ErrorCategory /*category*/, Goffset pos, const char *msg)
     {
         QString emsg;
 
@@ -75,12 +77,7 @@ namespace Debug {
     }
 
     QString unicodeToQString(const Unicode* u, int len) {
-        if (!utf8Map)
-        {
-                GooString enc("UTF-8");
-                utf8Map = globalParams->getUnicodeMap(&enc);
-                utf8Map->incRefCnt();
-        }
+        const UnicodeMap *utf8Map = globalParams->getUtf8Map();
 
         // ignore the last character if it is 0x0
         if ((len > 0) && (u[len - 1] == 0))
@@ -96,38 +93,29 @@ namespace Debug {
             convertedStr.append(buf, n);
         }
 
-        return QString::fromUtf8(convertedStr.getCString(), convertedStr.getLength());
+        return QString::fromUtf8(convertedStr.c_str(), convertedStr.getLength());
     }
 
     QString UnicodeParsedString(const GooString *s1) {
-        if ( !s1 || s1->getLength() == 0 )
+        return (s1) ? UnicodeParsedString(s1->toStr()) : QString();
+    }
+
+    QString UnicodeParsedString(const std::string& s1) {
+        if ( s1.empty() )
             return QString();
 
-        const char *cString;
-        int stringLength;
-        bool deleteCString;
-        if ( ( s1->getChar(0) & 0xff ) == 0xfe && ( s1->getLength() > 1 && ( s1->getChar(1) & 0xff ) == 0xff ) )
+        if ( GooString::hasUnicodeMarker(s1) || GooString::hasUnicodeMarkerLE(s1) )
         {
-            cString = s1->getCString();
-            stringLength = s1->getLength();
-            deleteCString = false;
+            return QString::fromUtf16(reinterpret_cast<const ushort *>(s1.c_str()), s1.size() / 2);
         }
         else
         {
-            cString = pdfDocEncodingToUTF16(s1, &stringLength);
-            deleteCString = true;
-        }
-
-        QString result;
-        // i = 2 to skip the unicode marker
-        for ( int i = 2; i < stringLength; i += 2 )
-        {
-            const Unicode u = ( ( cString[i] & 0xff ) << 8 ) | ( cString[i+1] & 0xff );
-            result += QChar( u );
-        }
-        if (deleteCString)
+            int stringLength;
+            const char *cString = pdfDocEncodingToUTF16(s1, &stringLength);
+            auto result = QString::fromUtf16(reinterpret_cast<const ushort *>(cString), stringLength / 2);
             delete[] cString;
-        return result;
+            return result;
+        }
     }
 
     GooString *QStringToUnicodeGooString(const QString &s) {
@@ -160,7 +148,7 @@ namespace Debug {
             return nullptr;
         }
 
-        return QStringToUnicodeGooString(dt.toUTC().toString("yyyyMMddhhmmss+00'00'"));
+        return QStringToUnicodeGooString(dt.toUTC().toString(QStringLiteral("yyyyMMddhhmmss+00'00'")));
     }
 
     Annot::AdditionalActionsType toPopplerAdditionalActionType(Annotation::AdditionalActionType type) {
@@ -200,7 +188,7 @@ namespace Debug {
                     // so better storing the reference and provide the viewport on demand
                     const GooString *s = g->getNamedDest();
                     QChar *charArray = new QChar[s->getLength()];
-                    for (int i = 0; i < s->getLength(); ++i) charArray[i] = QChar(s->getCString()[i]);
+                    for (int i = 0; i < s->getLength(); ++i) charArray[i] = QChar(s->c_str()[i]);
                     QString aux(charArray, s->getLength());
                     e->setAttribute( QStringLiteral("DestinationName"), aux );
                     delete[] charArray;
@@ -224,7 +212,7 @@ namespace Debug {
                     // so better storing the reference and provide the viewport on demand
                     const GooString *s = g->getNamedDest();
                     QChar *charArray = new QChar[s->getLength()];
-                    for (int i = 0; i < s->getLength(); ++i) charArray[i] = QChar(s->getCString()[i]);
+                    for (int i = 0; i < s->getLength(); ++i) charArray[i] = QChar(s->c_str()[i]);
                     QString aux(charArray, s->getLength());
                     e->setAttribute( QStringLiteral("DestinationName"), aux );
                     delete[] charArray;
@@ -234,13 +222,13 @@ namespace Debug {
                     LinkDestinationData ldd(destination, nullptr, doc, g->getFileName() != nullptr);
                     e->setAttribute( QStringLiteral("Destination"), LinkDestination(ldd).toString() );
                 }
-                e->setAttribute( QStringLiteral("ExternalFileName"), g->getFileName()->getCString() );
+                e->setAttribute( QStringLiteral("ExternalFileName"), g->getFileName()->c_str() );
                 break;
             }
             case actionURI:
             {
                 const LinkURI * u = static_cast< const LinkURI * >( a );
-                e->setAttribute( QStringLiteral("DestinationURI"), u->getURI()->getCString() );
+                e->setAttribute( QStringLiteral("DestinationURI"), u->getURI().c_str() );
             }
             default: ;
         }
@@ -251,13 +239,6 @@ namespace Debug {
         qDeleteAll(m_embeddedFiles);
         delete (OptContentModel *)m_optContentModel;
         delete doc;
-    
-        count --;
-        if ( count == 0 )
-        {
-            utf8Map = nullptr;
-            delete globalParams;
-        }
       }
     
     void DocumentData::init()
@@ -266,24 +247,14 @@ namespace Debug {
         paperColor = Qt::white;
         m_hints = 0;
         m_optContentModel = nullptr;
-      
-        if ( count == 0 )
-        {
-            utf8Map = nullptr;
-            globalParams = new GlobalParams();
-            setErrorCallback(qt5ErrorFunction, nullptr);
-        }
-        count ++;
     }
 
 
-    void DocumentData::addTocChildren( QDomDocument * docSyn, QDomNode * parent, const GooList * items )
+    void DocumentData::addTocChildren( QDomDocument * docSyn, QDomNode * parent, const std::vector<::OutlineItem*> * items )
     {
-        int numItems = items->getLength();
-        for ( int i = 0; i < numItems; ++i )
+        for ( ::OutlineItem * outlineItem :  *items )
         {
             // iterate over every object in 'items'
-            OutlineItem * outlineItem = (OutlineItem *)items->get( i );
 
             // 1. create element using outlineItem's title as tagName
             QString name;
@@ -304,10 +275,20 @@ namespace Debug {
 
             // 3. recursively descend over children
             outlineItem->open();
-            const GooList * children = outlineItem->getKids();
+            const std::vector<::OutlineItem*> * children = outlineItem->getKids();
             if ( children )
                 addTocChildren( docSyn, &item, children );
         }
+    }
+
+    FormWidget *FormFieldData::getFormWidget( const FormField *f )
+    {
+        return f->m_formData->fm;
+    }
+
+    FormFieldIconData *FormFieldIconData::getData( const FormFieldIcon &f )
+    {
+        return f.d_ptr;
     }
 
 }

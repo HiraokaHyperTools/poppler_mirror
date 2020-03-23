@@ -4,7 +4,7 @@
 //
 // A JPX stream decoder using OpenJPEG
 //
-// Copyright 2008-2010, 2012, 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright 2008-2010, 2012, 2017-2019 Albert Astals Cid <aacid@kde.org>
 // Copyright 2011 Daniel Glöckner <daniel-gl@gmx.net>
 // Copyright 2014, 2016 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright 2013, 2014 Adrian Johnson <ajohnson@redneon.com>
@@ -39,12 +39,12 @@ struct JPXStreamPrivate {
   int ccounter;
   int npixels;
   int ncomps;
-  GBool inited;
+  bool inited;
   int smaskInData;
-  void init2(OPJ_CODEC_FORMAT format, unsigned char *data, int length, GBool indexed);
+  void init2(OPJ_CODEC_FORMAT format, unsigned char *buf, int length, bool indexed);
 };
 
-static inline Guchar adjustComp(int r, int adjust, int depth, int sgndcorr, GBool indexed) {
+static inline unsigned char adjustComp(int r, int adjust, int depth, int sgndcorr, bool indexed) {
   if (!indexed) {
     r += sgndcorr;
     if (adjust) {
@@ -76,7 +76,7 @@ static inline int doGetChar(JPXStreamPrivate* priv) {
 
 JPXStream::JPXStream(Stream *strA) : FilterStream(strA) {
   priv = new JPXStreamPrivate;
-  priv->inited = gFalse;
+  priv->inited = false;
   priv->image = nullptr;
   priv->npixels = 0;
   priv->ncomps = 0;
@@ -105,8 +105,8 @@ Goffset JPXStream::getPos() {
   return priv->counter * priv->ncomps + priv->ccounter;
 }
 
-int JPXStream::getChars(int nChars, Guchar *buffer) {
-  if (unlikely(priv->inited == gFalse)) { init(); }
+int JPXStream::getChars(int nChars, unsigned char *buffer) {
+  if (unlikely(priv->inited == false)) { init(); }
 
   for (int i = 0; i < nChars; ++i) {
     const int c = doGetChar(priv);
@@ -117,13 +117,13 @@ int JPXStream::getChars(int nChars, Guchar *buffer) {
 }
 
 int JPXStream::getChar() {
-  if (unlikely(priv->inited == gFalse)) { init(); }
+  if (unlikely(priv->inited == false)) { init(); }
 
   return doGetChar(priv);
 }
 
 int JPXStream::lookChar() {
-  if (unlikely(priv->inited == gFalse)) { init(); }
+  if (unlikely(priv->inited == false)) { init(); }
 
   return doLookChar(priv);
 }
@@ -132,12 +132,12 @@ GooString *JPXStream::getPSFilter(int psLevel, const char *indent) {
   return nullptr;
 }
 
-GBool JPXStream::isBinary(GBool last) {
-  return str->isBinary(gTrue);
+bool JPXStream::isBinary(bool last) {
+  return str->isBinary(true);
 }
 
 void JPXStream::getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMode) {
-  if (unlikely(priv->inited == gFalse)) { init(); }
+  if (unlikely(priv->inited == false)) { init(); }
 
   *bitsPerComponent = 8;
   int numComps = (priv->image) ? priv->image->numcomps : 1;
@@ -219,12 +219,12 @@ void JPXStream::init()
   }
 
   int bufSize = BUFFER_INITIAL_SIZE;
-  if (oLen.isInt()) bufSize = oLen.getInt();
+  if (oLen.isInt() && oLen.getInt() > 0) bufSize = oLen.getInt();
 
-  GBool indexed = gFalse;
+  bool indexed = false;
   if (cspace.isArray() && cspace.arrayGetLength() > 0) {
     const Object cstype = cspace.arrayGet(0);
-    if (cstype.isName("Indexed")) indexed = gTrue;
+    if (cstype.isName("Indexed")) indexed = true;
   }
 
   priv->smaskInData = 0;
@@ -253,6 +253,12 @@ void JPXStream::init()
         close();
         break;
       }
+      const int componentPixels = priv->image->comps[component].w * priv->image->comps[component].h;
+      if (componentPixels != priv->npixels) {
+        error(errSyntaxWarning, -1, "Component {0:d} has different WxH than component 0", component);
+        close();
+        break;
+      }
       unsigned char *cdata = (unsigned char *)priv->image->comps[component].data;
       int adjust = 0;
       int depth = priv->image->comps[component].prec;
@@ -272,10 +278,10 @@ void JPXStream::init()
 
   priv->counter = 0;
   priv->ccounter = 0;
-  priv->inited = gTrue;
+  priv->inited = true;
 }
 
-void JPXStreamPrivate::init2(OPJ_CODEC_FORMAT format, unsigned char *buf, int length, GBool indexed)
+void JPXStreamPrivate::init2(OPJ_CODEC_FORMAT format, unsigned char *buf, int length, bool indexed)
 {
   JPXData jpxData;
 
@@ -351,6 +357,10 @@ void JPXStreamPrivate::init2(OPJ_CODEC_FORMAT format, unsigned char *buf, int le
     return;
 
 error:
+  if (image != nullptr) {
+    opj_image_destroy(image);
+    image = nullptr;
+  }
   opj_stream_destroy(stream);
   opj_destroy_codec(decoder);
   if (format == OPJ_CODEC_JP2) {

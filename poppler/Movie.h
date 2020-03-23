@@ -5,7 +5,7 @@
 //---------------------------------------------------------------------------------
 // Hugo Mercier <hmercier31[at]gmail.com> (c) 2008
 // Carlos Garcia Campos <carlosgc@gnome.org> (c) 2010
-// Albert Astals Cid <aacid@kde.org> (c) 2017, 2018
+// Albert Astals Cid <aacid@kde.org> (c) 2017-2019
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ struct MovieActivationParameters {
   ~MovieActivationParameters();
 
   // parse from a "Movie Activation" dictionary
-  void parseMovieActivation(const Object* actObj);
+  void parseMovieActivation(const Object* aDict);
 
   enum MovieRepeatMode {
     repeatModeOnce,
@@ -44,7 +44,7 @@ struct MovieActivationParameters {
 
   struct MovieTime {
     MovieTime() { units_per_second = 0; }
-    Gulong units;
+    unsigned long units;
     int units_per_second; // 0 : defined by movie
   };
 
@@ -55,13 +55,13 @@ struct MovieActivationParameters {
 
   int volume;                              // 100
 
-  GBool showControls;                      // false
+  bool showControls;                      // false
 
-  GBool synchronousPlay;                   // false
+  bool synchronousPlay;                   // false
   MovieRepeatMode repeatMode;              // repeatModeOnce
 
   // floating window position
-  GBool floatingWindow;
+  bool floatingWindow;
   double xPosition;                        // 0.5
   double yPosition;                        // 0.5
   int znum;                                // 1
@@ -70,24 +70,24 @@ struct MovieActivationParameters {
 
 class Movie {
  public:
-  Movie(const Object *objMovie, const Object *objAct);
-  Movie(const Object *objMovie);
-  Movie(const Movie &movie);
+  Movie(const Object *movieDict, const Object *aDict);
+  Movie(const Object *movieDict);
+  Movie(const Movie &other);
   ~Movie();
   Movie& operator=(const Movie &) = delete;
 
-  GBool isOk() const { return ok; }
+  bool isOk() const { return ok; }
   const MovieActivationParameters* getActivationParameters() const { return &MA; }
 
   const GooString* getFileName() const { return fileName; }
 
-  Gushort getRotationAngle() const { return rotationAngle; }
+  unsigned short getRotationAngle() const { return rotationAngle; }
   void getAspect (int *widthA, int *heightA) const { *widthA = width; *heightA = height; }
 
   Object getPoster() const { return poster.copy(); }
-  GBool getShowPoster() const { return showPoster; }
+  bool getShowPoster() const { return showPoster; }
 
-  GBool getUseFloatingWindow() const { return MA.floatingWindow; }
+  bool getUseFloatingWindow() const { return MA.floatingWindow; }
   void  getFloatingWindowSize(int *width, int *height);
 
   Movie* copy() const ;
@@ -95,14 +95,14 @@ class Movie {
  private:
   void parseMovie (const Object *movieDict);
 
-  GBool ok;
+  bool ok;
 
-  Gushort rotationAngle;                   // 0
+  unsigned short rotationAngle;            // 0
   int width;                               // Aspect
   int height;                              // Aspect
 
   Object poster;
-  GBool showPoster;
+  bool showPoster;
 
   GooString* fileName;
 

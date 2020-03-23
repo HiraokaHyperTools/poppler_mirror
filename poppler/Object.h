@@ -15,7 +15,7 @@
 //
 // Copyright (C) 2007 Julien Rebetez <julienr@svn.gnome.org>
 // Copyright (C) 2008 Kees Cook <kees@outflux.net>
-// Copyright (C) 2008, 2010, 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008, 2010, 2017-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Jakub Wilk <jwilk@jwilk.net>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
@@ -33,16 +33,11 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
-
 #include <cassert>
 #include <set>
-#include <stdio.h>
-#include <string.h>
-#include <limits.h>
-#include "goo/gtypes.h"
+#include <cstdio>
+#include <cstring>
+#include <climits>
 #include "goo/gmem.h"
 #include "goo/GooString.h"
 #include "goo/GooLikely.h"
@@ -87,13 +82,19 @@ class Stream;
 struct Ref {
   int num;			// object number
   int gen;			// generation number
+
+  static constexpr Ref INVALID() { return {-1, -1}; };
 };
 
-inline bool operator== (const Ref& lhs, const Ref& rhs) noexcept {
+inline bool operator== (const Ref lhs, const Ref rhs) noexcept {
   return lhs.num == rhs.num && lhs.gen == rhs.gen;
 }
 
-inline bool operator< (const Ref& lhs, const Ref& rhs) noexcept {
+inline bool operator!= (const Ref lhs, const Ref rhs) noexcept {
+  return lhs.num != rhs.num || lhs.gen != rhs.gen;
+}
+
+inline bool operator< (const Ref lhs, const Ref rhs) noexcept {
   if (lhs.num != rhs.num)
     return lhs.num < rhs.num;
   return lhs.gen < rhs.gen;
@@ -108,7 +109,7 @@ struct hash<Ref>
     using argument_type = Ref;
     using result_type = size_t;
 
-    result_type operator() (const argument_type &ref) const noexcept
+    result_type operator() (const argument_type ref) const noexcept
     {
 	return std::hash<int>{}(ref.num) ^ (std::hash<int>{}(ref.gen) << 1);
     }
@@ -146,57 +147,63 @@ enum ObjType {
   objDead			// and object after shallowCopy
 };
 
-#define numObjTypes 16		// total number of object types
+constexpr int numObjTypes = 16;		// total number of object types
 
 //------------------------------------------------------------------------
 // Object
 //------------------------------------------------------------------------
 
-#define initObj(t) free(); zeroUnion(); type = t
-#define constructObj(t) type = t
-
 class Object {
 public:
-  // clear the anonymous union as best we can -- clear at least a pointer
-  void zeroUnion() { this->cString = nullptr; }
+  Object() : type(objNone) {}
+  ~Object() { free(); }
 
-  // Default constructor.
-  Object():
-    type(objNone) { zeroUnion(); }
-  ~Object();
-
-  explicit Object(GBool boolnA)
-    { constructObj(objBool); booln = boolnA; }
+  explicit Object(bool boolnA)
+    { type = objBool; booln = boolnA; }
   explicit Object(int intgA)
-    { constructObj(objInt); intg = intgA; }
+    { type = objInt; intg = intgA; }
   explicit Object(ObjType typeA)
-    { constructObj(typeA); }
+    { type = typeA; }
   explicit Object(double realA)
-    { constructObj(objReal); real = realA; }
+    { type = objReal; real = realA; }
   explicit Object(GooString *stringA)
-    { assert(stringA); constructObj(objString); string = stringA; }
+    { assert(stringA); type = objString; string = stringA; }
   Object(ObjType typeA, const char *stringA)
-    { assert(typeA == objName || typeA == objCmd); assert(stringA); constructObj(typeA); cString = copyString(stringA); }
+    { assert(typeA == objName || typeA == objCmd); assert(stringA); type = typeA; cString = copyString(stringA); }
   explicit Object(long long int64gA)
-    { constructObj(objInt64); int64g = int64gA; }
+    { type = objInt64; int64g = int64gA; }
   explicit Object(Array *arrayA)
-    { assert(arrayA); constructObj(objArray); array = arrayA; }
+    { assert(arrayA); type = objArray; array = arrayA; }
   explicit Object(Dict *dictA)
-    { assert(dictA); constructObj(objDict); dict = dictA; }
+    { assert(dictA); type = objDict; dict = dictA; }
   explicit Object(Stream *streamA)
-    { assert(streamA); constructObj(objStream); stream = streamA; }
-  Object(int numA, int genA)
-    { constructObj(objRef); ref.num = numA; ref.gen = genA; }
+    { assert(streamA); type = objStream; stream = streamA; }
+  explicit Object(const Ref r)
+    { type = objRef; ref = r; }
+
   template<typename T> Object(T) = delete;
 
-  Object(Object&& other);
-  Object& operator=(Object&& other);
+  Object(Object&& other) noexcept
+  {
+    std::memcpy(reinterpret_cast<void*>(this), &other, sizeof(Object));
+    other.type = objDead;
+  }
+
+  Object& operator=(Object&& other) noexcept
+  {
+    free();
+
+    std::memcpy(reinterpret_cast<void*>(this), &other, sizeof(Object));
+    other.type = objDead;
+
+    return *this;
+  }
 
   Object &operator=(const Object &other) = delete;
   Object(const Object &other) = delete;
 
   // Set object to null.
-  void setToNull() { initObj(objNull); }
+  void setToNull() { free(); type = objNull; }
 
   // Copy this to obj
   Object copy() const;
@@ -207,34 +214,33 @@ public:
 
   // Type checking.
   ObjType getType() const { CHECK_NOT_DEAD; return type; }
-  GBool isBool() const { CHECK_NOT_DEAD; return type == objBool; }
-  GBool isInt() const { CHECK_NOT_DEAD; return type == objInt; }
-  GBool isReal() const { CHECK_NOT_DEAD; return type == objReal; }
-  GBool isNum() const { CHECK_NOT_DEAD; return type == objInt || type == objReal || type == objInt64; }
-  GBool isString() const { CHECK_NOT_DEAD; return type == objString; }
-  GBool isName() const { CHECK_NOT_DEAD; return type == objName; }
-  GBool isNull() const { CHECK_NOT_DEAD; return type == objNull; }
-  GBool isArray() const { CHECK_NOT_DEAD; return type == objArray; }
-  GBool isDict() const { CHECK_NOT_DEAD; return type == objDict; }
-  GBool isStream() const { CHECK_NOT_DEAD; return type == objStream; }
-  GBool isRef() const { CHECK_NOT_DEAD; return type == objRef; }
-  GBool isCmd() const { CHECK_NOT_DEAD; return type == objCmd; }
-  GBool isError() const { CHECK_NOT_DEAD; return type == objError; }
-  GBool isEOF() const { CHECK_NOT_DEAD; return type == objEOF; }
-  GBool isNone() const { CHECK_NOT_DEAD; return type == objNone; }
-  GBool isInt64() const { CHECK_NOT_DEAD; return type == objInt64; }
-  GBool isIntOrInt64() const { CHECK_NOT_DEAD; return type == objInt || type == objInt64; }
+  bool isBool() const { CHECK_NOT_DEAD; return type == objBool; }
+  bool isInt() const { CHECK_NOT_DEAD; return type == objInt; }
+  bool isReal() const { CHECK_NOT_DEAD; return type == objReal; }
+  bool isNum() const { CHECK_NOT_DEAD; return type == objInt || type == objReal || type == objInt64; }
+  bool isString() const { CHECK_NOT_DEAD; return type == objString; }
+  bool isName() const { CHECK_NOT_DEAD; return type == objName; }
+  bool isNull() const { CHECK_NOT_DEAD; return type == objNull; }
+  bool isArray() const { CHECK_NOT_DEAD; return type == objArray; }
+  bool isDict() const { CHECK_NOT_DEAD; return type == objDict; }
+  bool isStream() const { CHECK_NOT_DEAD; return type == objStream; }
+  bool isRef() const { CHECK_NOT_DEAD; return type == objRef; }
+  bool isCmd() const { CHECK_NOT_DEAD; return type == objCmd; }
+  bool isError() const { CHECK_NOT_DEAD; return type == objError; }
+  bool isEOF() const { CHECK_NOT_DEAD; return type == objEOF; }
+  bool isNone() const { CHECK_NOT_DEAD; return type == objNone; }
+  bool isInt64() const { CHECK_NOT_DEAD; return type == objInt64; }
+  bool isIntOrInt64() const { CHECK_NOT_DEAD; return type == objInt || type == objInt64; }
 
   // Special type checking.
-  GBool isName(const char *nameA) const
+  bool isName(const char *nameA) const
     { return type == objName && !strcmp(cString, nameA); }
-  GBool isDict(const char *dictType) const;
-  GBool isStream(char *dictType) const;
-  GBool isCmd(const char *cmdA) const
+  bool isDict(const char *dictType) const;
+  bool isCmd(const char *cmdA) const
     { return type == objCmd && !strcmp(cString, cmdA); }
 
   // Accessors.
-  GBool getBool() const { OBJECT_TYPE_CHECK(objBool); return booln; }
+  bool getBool() const { OBJECT_TYPE_CHECK(objBool); return booln; }
   int getInt() const { OBJECT_TYPE_CHECK(objInt); return intg; }
   double getReal() const { OBJECT_TYPE_CHECK(objReal); return real; }
 
@@ -259,7 +265,7 @@ public:
   Ref getRef() const { OBJECT_TYPE_CHECK(objRef); return ref; }
   int getRefNum() const { OBJECT_TYPE_CHECK(objRef); return ref.num; }
   int getRefGen() const { OBJECT_TYPE_CHECK(objRef); return ref.gen; }
-  char *getCmd() const { OBJECT_TYPE_CHECK(objCmd); return cString; }
+  const char *getCmd() const { OBJECT_TYPE_CHECK(objCmd); return cString; }
   long long getInt64() const { OBJECT_TYPE_CHECK(objInt64); return int64g; }
   long long getIntOrInt64() const { OBJECT_2TYPES_CHECK(objInt, objInt64);
     return type == objInt ? intg : int64g; }
@@ -269,7 +275,7 @@ public:
   void arrayAdd(Object &&elem);
   void arrayRemove(int i);
   Object arrayGet(int i, int recursion) const;
-  Object arrayGetNF(int i) const;
+  const Object &arrayGetNF(int i) const;
 
   // Dict accessors.
   int dictGetLength() const;
@@ -277,22 +283,18 @@ public:
   void dictAdd(const char *key, Object &&val);
   void dictSet(const char *key, Object &&val);
   void dictRemove(const char *key);
-  GBool dictIs(const char *dictType) const;
+  bool dictIs(const char *dictType) const;
   Object dictLookup(const char *key, int recursion = 0) const;
-  Object dictLookupNF(const char *key) const;
+  const Object &dictLookupNF(const char *key) const;
   const char *dictGetKey(int i) const;
   Object dictGetVal(int i) const;
-  Object dictGetValNF(int i) const;
+  const Object &dictGetValNF(int i) const;
 
   // Stream accessors.
-  GBool streamIs(char *dictType) const;
   void streamReset();
   void streamClose();
   int streamGetChar() const;
-  int streamGetChars(int nChars, Guchar *buffer) const;
-  int streamLookChar() const;
-  char *streamGetLine(char *buf, int size) const;
-  Goffset streamGetPos() const;
+  int streamGetChars(int nChars, unsigned char *buffer) const;
   void streamSetPos(Goffset pos, int dir = 0);
   Dict *streamGetDict() const;
 
@@ -300,20 +302,24 @@ public:
   const char *getTypeName() const;
   void print(FILE *f = stdout) const;
 
-private:
-  friend class Array; // Needs free and initNullAfterMalloc
-  friend class Dict; // Needs free and initNullAfterMalloc
-  friend class XRef; // Needs free and initNullAfterMalloc
+  double getNumWithDefaultValue(double defaultValue) const {
+    if (unlikely(type != objInt && type != objInt64 && type != objReal)) {
+      return defaultValue;
+    }
+    return type == objInt ? (double)intg : type == objInt64 ? (double)int64g : real;
+  }
 
+  bool getBoolWithDefaultValue(bool defaultValue) const {
+    return (type == objBool) ? booln : defaultValue;
+  }
+
+private:
   // Free object contents.
   void free();
 
-  // Only use if are mallocing Objects
-  void initNullAfterMalloc() { constructObj(objNull); }
-
   ObjType type;			// object type
   union {			// value for each type:
-    GBool booln;		//   boolean
+    bool booln;		//   boolean
     int intg;			//   integer
     long long int64g;           //   64-bit integer
     double real;		//   real
@@ -344,7 +350,7 @@ inline void Object::arrayRemove(int i)
 inline Object Object::arrayGet(int i, int recursion = 0) const
   { OBJECT_TYPE_CHECK(objArray); return array->get(i, recursion); }
 
-inline Object Object::arrayGetNF(int i) const
+inline const Object &Object::arrayGetNF(int i) const
   { OBJECT_TYPE_CHECK(objArray); return array->getNF(i); }
 
 //------------------------------------------------------------------------
@@ -365,16 +371,16 @@ inline void Object::dictSet(const char *key, Object &&val)
 inline void Object::dictRemove(const char *key)
   { OBJECT_TYPE_CHECK(objDict); dict->remove(key); }
 
-inline GBool Object::dictIs(const char *dictType) const
+inline bool Object::dictIs(const char *dictType) const
   { OBJECT_TYPE_CHECK(objDict); return dict->is(dictType); }
 
-inline GBool Object::isDict(const char *dictType) const
+inline bool Object::isDict(const char *dictType) const
   { return type == objDict && dictIs(dictType); }
 
 inline Object Object::dictLookup(const char *key, int recursion) const
   { OBJECT_TYPE_CHECK(objDict); return dict->lookup(key, recursion); }
 
-inline Object Object::dictLookupNF(const char *key) const
+inline const Object &Object::dictLookupNF(const char *key) const
   { OBJECT_TYPE_CHECK(objDict); return dict->lookupNF(key); }
 
 inline const char *Object::dictGetKey(int i) const
@@ -383,7 +389,7 @@ inline const char *Object::dictGetKey(int i) const
 inline Object Object::dictGetVal(int i) const
   { OBJECT_TYPE_CHECK(objDict); return dict->getVal(i); }
 
-inline Object Object::dictGetValNF(int i) const
+inline const Object &Object::dictGetValNF(int i) const
   { OBJECT_TYPE_CHECK(objDict); return dict->getValNF(i); }
 
 //------------------------------------------------------------------------
@@ -391,12 +397,6 @@ inline Object Object::dictGetValNF(int i) const
 //------------------------------------------------------------------------
 
 #include "Stream.h"
-
-inline GBool Object::streamIs(char *dictType) const
-  { OBJECT_TYPE_CHECK(objStream); return stream->getDict()->is(dictType); }
-
-inline GBool Object::isStream(char *dictType) const
-  { return type == objStream && streamIs(dictType); }
 
 inline void Object::streamReset()
   { OBJECT_TYPE_CHECK(objStream); stream->reset(); }
@@ -407,20 +407,8 @@ inline void Object::streamClose()
 inline int Object::streamGetChar() const
   { OBJECT_TYPE_CHECK(objStream); return stream->getChar(); }
 
-inline int Object::streamGetChars(int nChars, Guchar *buffer) const
+inline int Object::streamGetChars(int nChars, unsigned char *buffer) const
   { OBJECT_TYPE_CHECK(objStream); return stream->doGetChars(nChars, buffer); }
-
-inline int Object::streamLookChar() const
-  { OBJECT_TYPE_CHECK(objStream); return stream->lookChar(); }
-
-inline char *Object::streamGetLine(char *buf, int size) const
-  { OBJECT_TYPE_CHECK(objStream); return stream->getLine(buf, size); }
-
-inline Goffset Object::streamGetPos() const
-  { OBJECT_TYPE_CHECK(objStream); return stream->getPos(); }
-
-inline void Object::streamSetPos(Goffset pos, int dir)
-  { OBJECT_TYPE_CHECK(objStream); stream->setPos(pos, dir); }
 
 inline Dict *Object::streamGetDict() const
   { OBJECT_TYPE_CHECK(objStream); return stream->getDict(); }

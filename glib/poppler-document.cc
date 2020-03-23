@@ -2,6 +2,9 @@
  * Copyright (C) 2005, Red Hat, Inc.
  *
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
+ * Copyright (C) 2018-2019 Marek Kasik <mkasik@redhat.com>
+ * Copyright (C) 2019 Masamichi Hosoda <trueroad@trueroad.jp>
+ * Copyright (C) 2019, Oliver Sander <oliver.sander@tu-dresden.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,10 +22,11 @@
  */
 
 #include "config.h"
-#include <string.h>
+#include <cstring>
 
 #ifndef __GI_SCANNER__
-#include <goo/GooList.h>
+#include <memory>
+
 #include <splash/SplashBitmap.h>
 #include <DateInfo.h>
 #include <GlobalParams.h>
@@ -36,6 +40,7 @@
 #include <FontInfo.h>
 #include <PDFDocEncoding.h>
 #include <OptionalContent.h>
+#include <ViewerPreferences.h>
 #endif
 
 #include "poppler.h"
@@ -43,6 +48,10 @@
 #include "poppler-enums.h"
 #include "poppler-input-stream.h"
 #include "poppler-cached-file-loader.h"
+
+#ifdef G_OS_WIN32
+  #include <stringapiset.h>
+#endif
 
 /**
  * SECTION:poppler-document
@@ -58,6 +67,10 @@ enum {
 	PROP_FORMAT,
 	PROP_FORMAT_MAJOR,
 	PROP_FORMAT_MINOR,
+	PROP_SUBTYPE,
+	PROP_SUBTYPE_STRING,
+	PROP_SUBTYPE_PART,
+	PROP_SUBTYPE_CONF,
 	PROP_AUTHOR,
 	PROP_SUBJECT,
 	PROP_KEYWORDS,
@@ -70,7 +83,10 @@ enum {
 	PROP_PAGE_MODE,
 	PROP_VIEWER_PREFERENCES,
 	PROP_PERMISSIONS,
-	PROP_METADATA
+	PROP_METADATA,
+	PROP_PRINT_SCALING,
+	PROP_PRINT_DUPLEX,
+	PROP_PRINT_N_COPIES
 };
 
 static void poppler_document_layers_free (PopplerDocument *document);
@@ -84,8 +100,9 @@ struct _PopplerDocumentClass
 G_DEFINE_TYPE (PopplerDocument, poppler_document, G_TYPE_OBJECT)
 
 static PopplerDocument *
-_poppler_document_new_from_pdfdoc (PDFDoc  *newDoc,
-                                   GError **error)
+_poppler_document_new_from_pdfdoc (std::unique_ptr<GlobalParamsIniter> &&initer,
+                                   PDFDoc             *newDoc,
+                                   GError             **error)
 {
   PopplerDocument *document;
 
@@ -129,6 +146,7 @@ _poppler_document_new_from_pdfdoc (PDFDoc  *newDoc,
   }
 
   document = (PopplerDocument *) g_object_new (POPPLER_TYPE_DOCUMENT, nullptr);
+  document->initer = std::move(initer);
   document->doc = newDoc;
 
   document->output_dev = new CairoOutputDev ();
@@ -175,9 +193,7 @@ poppler_document_new_from_file (const char  *uri,
   GooString *password_g;
   char *filename;
 
-  if (!globalParams) {
-    globalParams = new GlobalParams();
-  }
+  auto initer = std::make_unique<GlobalParamsIniter>(_poppler_error_cb);
 
   filename = g_filename_from_uri (uri, nullptr, error);
   if (!filename)
@@ -193,7 +209,7 @@ poppler_document_new_from_file (const char  *uri,
 
   filenameW = new WCHAR[length];
   if (!filenameW)
-      return NULL;
+      return nullptr;
 
   length = MultiByteToWideChar(CP_UTF8, 0, filename, -1, filenameW, length);
 
@@ -208,12 +224,12 @@ poppler_document_new_from_file (const char  *uri,
 
   delete password_g;
 
-  return _poppler_document_new_from_pdfdoc (newDoc, error);
+  return _poppler_document_new_from_pdfdoc (std::move(initer), newDoc, error);
 }
 
 /**
  * poppler_document_new_from_data:
- * @data: the pdf data contained in a char array
+ * @data: (array length=length) (element-type guint8): the pdf data
  * @length: the length of #data
  * @password: (allow-none): password to unlock the file with, or %NULL
  * @error: (allow-none): Return location for an error, or %NULL
@@ -221,6 +237,9 @@ poppler_document_new_from_file (const char  *uri,
  * Creates a new #PopplerDocument.  If %NULL is returned, then @error will be
  * set. Possible errors include those in the #POPPLER_ERROR and #G_FILE_ERROR
  * domains.
+ *
+ * Note that @data must remain valid for as long as the returned document exists.
+ * Prefer using poppler_document_new_from_bytes().
  * 
  * Return value: A newly created #PopplerDocument, or %NULL
  **/
@@ -234,9 +253,7 @@ poppler_document_new_from_data (char        *data,
   MemStream *str;
   GooString *password_g;
 
-  if (!globalParams) {
-    globalParams = new GlobalParams();
-  }
+  auto initer = std::make_unique<GlobalParamsIniter>(_poppler_error_cb);
   
   // create stream
   str = new MemStream(data, 0, length, Object(objNull));
@@ -245,7 +262,59 @@ poppler_document_new_from_data (char        *data,
   newDoc = new PDFDoc(str, password_g, password_g);
   delete password_g;
 
-  return _poppler_document_new_from_pdfdoc (newDoc, error);
+  return _poppler_document_new_from_pdfdoc (std::move(initer), newDoc, error);
+}
+
+class BytesStream : public MemStream
+{
+  std::unique_ptr<GBytes, decltype(&g_bytes_unref)> m_bytes;
+
+public:
+  BytesStream(GBytes *bytes, Object &&dictA)
+    : MemStream(static_cast<const char*>(g_bytes_get_data(bytes, nullptr)),
+		0, g_bytes_get_size(bytes), std::move(dictA)),
+      m_bytes{g_bytes_ref(bytes), &g_bytes_unref}
+  { }
+};
+
+/**
+ * poppler_document_new_from_bytes:
+ * @bytes: a #GBytes
+ * @password: (allow-none): password to unlock the file with, or %NULL
+ * @error: (allow-none): Return location for an error, or %NULL
+ *
+ * Creates a new #PopplerDocument from @bytes. The returned document
+ * will hold a reference to @bytes.
+ *
+ * On error,  %NULL is returned, with @error set. Possible errors include
+ * those in the #POPPLER_ERROR and #G_FILE_ERROR domains.
+ *
+ * Return value: (transfer full): a newly created #PopplerDocument, or %NULL
+ *
+ * Since: 0.82
+ **/
+PopplerDocument *
+poppler_document_new_from_bytes (GBytes      *bytes,
+				 const char  *password,
+				 GError     **error)
+{
+  PDFDoc *newDoc;
+  BytesStream *str;
+  GooString *password_g;
+
+  g_return_val_if_fail(bytes != nullptr, nullptr);
+  g_return_val_if_fail(error == nullptr || *error == nullptr, nullptr);
+
+  auto initer = std::make_unique<GlobalParamsIniter>(_poppler_error_cb);
+
+  // create stream
+  str = new BytesStream(bytes, Object(objNull));
+
+  password_g = poppler_password_to_latin1(password);
+  newDoc = new PDFDoc(str, password_g, password_g);
+  delete password_g;
+
+  return _poppler_document_new_from_pdfdoc (std::move(initer), newDoc, error);
 }
 
 static inline gboolean
@@ -266,8 +335,8 @@ stream_is_memory_buffer_or_local_file (GInputStream *stream)
  * Creates a new #PopplerDocument reading the PDF contents from @stream.
  * Note that the given #GInputStream must be seekable or %G_IO_ERROR_NOT_SUPPORTED
  * will be returned.
- * Possible errors include those in the #POPPLER_ERROR and #G_FILE_ERROR
- * domains.
+ * Possible errors include those in the #POPPLER_ERROR, #G_FILE_ERROR
+ * and #G_IO_ERROR domains.
  *
  * Returns: (transfer full): a new #PopplerDocument, or %NULL
  *
@@ -287,9 +356,7 @@ poppler_document_new_from_stream (GInputStream *stream,
   g_return_val_if_fail(G_IS_INPUT_STREAM(stream), NULL);
   g_return_val_if_fail(length == (goffset)-1 || length > 0, NULL);
 
-  if (!globalParams) {
-    globalParams = new GlobalParams();
-  }
+  auto initer = std::make_unique<GlobalParamsIniter>(_poppler_error_cb);
 
   if (!G_IS_SEEKABLE(stream) || !g_seekable_can_seek(G_SEEKABLE(stream))) {
     g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
@@ -298,17 +365,24 @@ poppler_document_new_from_stream (GInputStream *stream,
   }
 
   if (stream_is_memory_buffer_or_local_file(stream)) {
-    str = new PopplerInputStream(stream, cancellable, 0, gFalse, 0, Object(objNull));
+    if (length == (goffset)-1) {
+      if (!g_seekable_seek(G_SEEKABLE(stream), 0, G_SEEK_END, cancellable, error)) {
+        g_prefix_error(error, "Unable to determine length of stream: ");
+        return nullptr;
+      }
+      length = g_seekable_tell(G_SEEKABLE(stream));
+    }
+    str = new PopplerInputStream(stream, cancellable, 0, false, length, Object(objNull));
   } else {
     CachedFile *cachedFile = new CachedFile(new PopplerCachedFileLoader(stream, cancellable, length), new GooString());
-    str = new CachedFileStream(cachedFile, 0, gFalse, cachedFile->getLength(), Object(objNull));
+    str = new CachedFileStream(cachedFile, 0, false, cachedFile->getLength(), Object(objNull));
   }
 
   password_g = poppler_password_to_latin1(password);
   newDoc = new PDFDoc(str, password_g, password_g);
   delete password_g;
 
-  return _poppler_document_new_from_pdfdoc (newDoc, error);
+  return _poppler_document_new_from_pdfdoc (std::move(initer), newDoc, error);
 }
 
 /**
@@ -468,6 +542,7 @@ poppler_document_finalize (GObject *object)
   poppler_document_layers_free (document);
   delete document->output_dev;
   delete document->doc;
+  delete document->initer.release();
 
   G_OBJECT_CLASS (poppler_document_parent_class)->finalize (object);
 }
@@ -509,9 +584,9 @@ poppler_document_get_id (PopplerDocument *document,
 
   if (document->doc->getID (permanent_id ? &permanent : nullptr, update_id ? &update : nullptr)) {
     if (permanent_id)
-      *permanent_id = (gchar *)g_memdup (permanent.getCString(), 32);
+      *permanent_id = (gchar *)g_memdup (permanent.c_str(), 32);
     if (update_id)
-      *update_id = (gchar *)g_memdup (update.getCString(), 32);
+      *update_id = (gchar *)g_memdup (update.c_str(), 32);
 
     retval = TRUE;
   }
@@ -666,9 +741,117 @@ poppler_document_get_attachments (PopplerDocument *document)
       attachment = _poppler_attachment_new (emb_file);
       delete emb_file;
 
-      retval = g_list_prepend (retval, attachment);
+      if (attachment != nullptr)
+        retval = g_list_prepend (retval, attachment);
     }
   return g_list_reverse (retval);
+}
+
+/**
+ * poppler_named_dest_from_bytestring:
+ * @data: (array length=length): the bytestring data
+ * @length: the bytestring length
+ *
+ * Converts a bytestring into a zero-terminated string suitable to
+ * pass to poppler_document_find_dest().
+ *
+ * Note that the returned string has no defined encoding and is not
+ * suitable for display to the user.
+ *
+ * The returned data must be freed using g_free().
+ *
+ * Returns: (transfer full): the named dest
+ *
+ * Since: 0.73
+ */
+char *
+poppler_named_dest_from_bytestring (const guint8 *data,
+				    gsize         length)
+{
+  const guint8 *p, *pend;
+  char *dest, *q;
+
+  g_return_val_if_fail (length != 0 || data != nullptr, nullptr);
+  /* Each source byte needs maximally 2 destination chars (\\ or \0) */
+  q = dest = (gchar *)g_malloc (length * 2 + 1);
+
+  pend = data + length;
+  for (p = data; p < pend; ++p) {
+    switch (*p) {
+    case '\0':
+      *q++ = '\\';
+      *q++ = '0';
+      break;
+    case '\\':
+      *q++ = '\\';
+      *q++ = '\\';
+      break;
+    default:
+      *q++ = *p;
+      break;
+    }
+  }
+
+  *q = 0; /* zero terminate */
+  return dest;
+}
+
+/**
+ * poppler_named_dest_to_bytestring:
+ * @name: the named dest string
+ * @length: (out): a location to store the length of the returned bytestring
+ *
+ * Converts a named dest string (e.g. from #PopplerDest.named_dest) into a
+ * bytestring, inverting the transformation of
+ * poppler_named_dest_from_bytestring().
+ *
+ * Note that the returned data is not zero terminated and may also
+ * contains embedded NUL bytes.
+ *
+ * If @name is not a valid named dest string, returns %NULL.
+ *
+ * The returned data must be freed using g_free().
+ *
+ * Returns: (array length=length) (transfer full) (nullable): a new bytestring,
+ *   or %NULL
+ *
+ * Since: 0.73
+ */
+guint8 *
+poppler_named_dest_to_bytestring (const char *name,
+				  gsize      *length)
+{
+  const char *p;
+  guint8 *data, *q;
+  gsize len;
+
+  g_return_val_if_fail (name != nullptr, nullptr);
+  g_return_val_if_fail (length != nullptr, nullptr);
+
+  len = strlen (name);
+  q = data = (guint8*) g_malloc (len);
+  for (p = name; *p; ++p) {
+    if (*p == '\\') {
+      p++;
+      len--;
+      if (*p == '0')
+	*q++ = '\0';
+      else if (*p == '\\')
+	*q++ = '\\';
+      else
+	goto invalid;
+    } else {
+      *q++ = *p;
+    }
+  }
+
+  *length = len;
+  return data;
+
+invalid:
+  g_free(data);
+  *length = 0;
+  return nullptr;
 }
 
 /**
@@ -676,36 +859,122 @@ poppler_document_get_attachments (PopplerDocument *document)
  * @document: A #PopplerDocument
  * @link_name: a named destination
  *
- * Finds named destination @link_name in @document
+ * Creates a #PopplerDest for the named destination @link_name in @document.
  *
- * Return value: The #PopplerDest destination or %NULL if
- * @link_name is not a destination. Returned value must
- * be freed with #poppler_dest_free
+ * Note that named destinations are bytestrings, not string. That means that
+ * unless @link_name was returned by a poppler function (e.g. is
+ * #PopplerDest.named_dest), it needs to be converted to string
+ * using poppler_named_dest_from_bytestring() before being passed to this
+ * function.
+ *
+ * The returned value must be freed with poppler_dest_free().
+ *
+ * Return value: (transfer full): a new #PopplerDest destination, or %NULL if
+ *   @link_name is not a destination.
  **/
 PopplerDest *
 poppler_document_find_dest (PopplerDocument *document,
 			    const gchar     *link_name)
 {
-	PopplerDest *dest = nullptr;
-	LinkDest *link_dest = nullptr;
-	GooString *g_link_name;
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), nullptr);
+  g_return_val_if_fail (link_name != nullptr, nullptr);
 
-	g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), NULL);
-	g_return_val_if_fail (link_name != nullptr, NULL);
+  gsize len;
+  guint8* data = poppler_named_dest_to_bytestring (link_name, &len);
+  if (data == nullptr)
+    return nullptr;
 
-	g_link_name = new GooString (link_name);
+  GooString g_link_name ((const char*)data, (int)len);
+  g_free (data);
 
-	if (g_link_name) {
-		link_dest = document->doc->findDest (g_link_name);
-		delete g_link_name;
+  std::unique_ptr<LinkDest> link_dest = document->doc->findDest (&g_link_name);
+  if (link_dest == nullptr)
+    return nullptr;
+
+  PopplerDest *dest = _poppler_dest_new_goto (document, link_dest.get());
+
+  return dest;
+}
+
+static gint
+_poppler_dest_compare_keys (gconstpointer a,
+			    gconstpointer b,
+			    gpointer user_data)
+{
+	return g_strcmp0 (static_cast<const gchar*>(a),
+			  static_cast<const gchar*>(b));
+}
+
+static void
+_poppler_dest_destroy_value (gpointer value)
+{
+	poppler_dest_free (static_cast<PopplerDest*>(value));
+}
+
+/**
+ * poppler_document_create_dests_tree:
+ * @document: A #PopplerDocument
+ *
+ * Creates named destinations balanced binary tree in @document
+ *
+ * The tree key is strings in the form returned by
+ * poppler_named_dest_bytestring() which constains a destination name.
+ * The tree value is the #PopplerDest* which contains a named destination.
+ * The return value must be freed with #g_tree_destroy.
+ *
+ * Returns: (transfer full) (nullable): the #GTree, or %NULL
+ * Since: 0.78
+ **/
+GTree *
+poppler_document_create_dests_tree (PopplerDocument *document)
+{
+	GTree *tree;
+	Catalog *catalog;
+	PopplerDest *dest;
+	int i;
+	gchar *key;
+
+	g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), nullptr);
+
+	catalog = document->doc->getCatalog ();
+	if (catalog == nullptr)
+		return nullptr;
+
+	tree = g_tree_new_full (_poppler_dest_compare_keys, nullptr,
+				g_free,
+				_poppler_dest_destroy_value);
+
+	// Iterate from name-dict
+	const int nDests = catalog->numDests ();
+	for (i = 0; i < nDests; ++i) {
+		// The names of name-dict cannot contain \0,
+		// so we can use strlen().
+		auto name = catalog->getDestsName (i);
+		key = poppler_named_dest_from_bytestring
+			(reinterpret_cast<const guint8*> (name),
+			 strlen (name));
+		std::unique_ptr<LinkDest> link_dest = catalog->getDestsDest (i);
+		if (link_dest) {
+			dest = _poppler_dest_new_goto (document, link_dest.get());
+			g_tree_insert (tree, key, dest);
+		}
 	}
 
-	if (link_dest) {
-		dest = _poppler_dest_new_goto (document, link_dest);
-		delete link_dest;
+	// Iterate form name-tree
+	const int nDestsNameTree = catalog->numDestNameTree ();
+	for (i = 0; i < nDestsNameTree; ++i) {
+		auto name = catalog->getDestNameTreeName (i);
+		key = poppler_named_dest_from_bytestring
+			(reinterpret_cast<const guint8*> (name->c_str ()),
+			 name->getLength ());
+		std::unique_ptr<LinkDest> link_dest = catalog->getDestNameTreeDest (i);
+		if (link_dest) {
+			dest = _poppler_dest_new_goto (document, link_dest.get());
+			g_tree_insert (tree, key, dest);
+		}
 	}
 
-	return dest;
+	return tree;
 }
 
 char *_poppler_goo_string_to_utf8(const GooString *s)
@@ -717,9 +986,13 @@ char *_poppler_goo_string_to_utf8(const GooString *s)
   char *result;
 
   if (s->hasUnicodeMarker()) {
-    result = g_convert (s->getCString () + 2,
+    result = g_convert (s->c_str () + 2,
 			s->getLength () - 2,
 			"UTF-8", "UTF-16BE", nullptr, nullptr, nullptr);
+  } else if (s->hasUnicodeMarkerLE()) {
+    result = g_convert (s->c_str () + 2,
+			s->getLength () - 2,
+			"UTF-8", "UTF-16LE", nullptr, nullptr, nullptr);
   } else {
     int len;
     gunichar *ucs4_temp;
@@ -805,6 +1078,85 @@ convert_page_mode (Catalog::PageMode pageMode)
     case Catalog::pageModeNone:
     default:
       return POPPLER_PAGE_MODE_UNSET;
+    }
+}
+
+static PopplerPDFSubtype
+convert_pdf_subtype (PDFSubtype pdfSubtype)
+{
+  switch (pdfSubtype)
+    {
+    case subtypePDFA:
+      return POPPLER_PDF_SUBTYPE_PDF_A;
+    case subtypePDFE:
+      return POPPLER_PDF_SUBTYPE_PDF_E;
+    case subtypePDFUA:
+      return POPPLER_PDF_SUBTYPE_PDF_UA;
+    case subtypePDFVT:
+      return POPPLER_PDF_SUBTYPE_PDF_VT;
+    case subtypePDFX:
+      return POPPLER_PDF_SUBTYPE_PDF_X;
+    case subtypeNone:
+      return POPPLER_PDF_SUBTYPE_NONE;
+    case subtypeNull:
+    default:
+      return POPPLER_PDF_SUBTYPE_UNSET;
+    }
+}
+
+static PopplerPDFPart
+convert_pdf_subtype_part (PDFSubtypePart pdfSubtypePart)
+{
+  switch (pdfSubtypePart)
+    {
+    case subtypePart1:
+      return POPPLER_PDF_SUBTYPE_PART_1;
+    case subtypePart2:
+      return POPPLER_PDF_SUBTYPE_PART_2;
+    case subtypePart3:
+      return POPPLER_PDF_SUBTYPE_PART_3;
+    case subtypePart4:
+      return POPPLER_PDF_SUBTYPE_PART_4;
+    case subtypePart5:
+      return POPPLER_PDF_SUBTYPE_PART_5;
+    case subtypePart6:
+      return POPPLER_PDF_SUBTYPE_PART_6;
+    case subtypePart7:
+      return POPPLER_PDF_SUBTYPE_PART_7;
+    case subtypePart8:
+      return POPPLER_PDF_SUBTYPE_PART_8;
+    case subtypePartNone:
+      return POPPLER_PDF_SUBTYPE_PART_NONE;
+    case subtypePartNull:
+    default:
+      return POPPLER_PDF_SUBTYPE_PART_UNSET;
+    }
+}
+
+static PopplerPDFConformance
+convert_pdf_subtype_conformance (PDFSubtypeConformance pdfSubtypeConf)
+{
+  switch (pdfSubtypeConf)
+    {
+    case subtypeConfA:
+      return POPPLER_PDF_SUBTYPE_CONF_A;
+    case subtypeConfB:
+      return POPPLER_PDF_SUBTYPE_CONF_B;
+    case subtypeConfG:
+      return POPPLER_PDF_SUBTYPE_CONF_G;
+    case subtypeConfN:
+      return POPPLER_PDF_SUBTYPE_CONF_N;
+    case subtypeConfP:
+      return POPPLER_PDF_SUBTYPE_CONF_P;
+    case subtypeConfPG:
+      return POPPLER_PDF_SUBTYPE_CONF_PG;
+    case subtypeConfU:
+      return POPPLER_PDF_SUBTYPE_CONF_U;
+    case subtypeConfNone:
+      return POPPLER_PDF_SUBTYPE_CONF_NONE;
+    case subtypeConfNull:
+    default:
+      return POPPLER_PDF_SUBTYPE_CONF_UNSET;
     }
 }
 
@@ -1254,7 +1606,7 @@ poppler_document_set_modification_date (PopplerDocument *document,
  * Returns whether @document is linearized or not. Linearization of PDF
  * enables efficient incremental access of the PDF file in a network environment.
  *
- * Return value: %TRUE if @document is linearized, %FALSE otherwhise
+ * Return value: %TRUE if @document is linearized, %FALSE otherwise
  *
  * Since: 0.16
  **/
@@ -1316,12 +1668,176 @@ poppler_document_get_page_mode (PopplerDocument *document)
 }
 
 /**
+ * poppler_document_get_print_scaling:
+ * @document: A #PopplerDocument
+ *
+ * Returns the print scaling value suggested by author of the document.
+ *
+ * Return value: a #PopplerPrintScaling that should be used when document is printed
+ *
+ * Since: 0.73
+ **/
+PopplerPrintScaling
+poppler_document_get_print_scaling (PopplerDocument *document)
+{
+  Catalog *catalog;
+  ViewerPreferences *preferences;
+  PopplerPrintScaling print_scaling = POPPLER_PRINT_SCALING_APP_DEFAULT;
+
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), POPPLER_PRINT_SCALING_APP_DEFAULT);
+
+  catalog = document->doc->getCatalog ();
+  if (catalog && catalog->isOk ()) {
+    preferences = catalog->getViewerPreferences();
+    if (preferences) {
+      switch (preferences->getPrintScaling()) {
+        default:
+        case ViewerPreferences::PrintScaling::printScalingAppDefault:
+          print_scaling = POPPLER_PRINT_SCALING_APP_DEFAULT;
+          break;
+        case ViewerPreferences::PrintScaling::printScalingNone:
+          print_scaling = POPPLER_PRINT_SCALING_NONE;
+          break;
+      }
+    }
+  }
+
+  return print_scaling;
+}
+
+/**
+ * poppler_document_get_print_duplex:
+ * @document: A #PopplerDocument
+ *
+ * Returns the duplex mode value suggested for printing by author of the document.
+ * Value POPPLER_PRINT_DUPLEX_NONE means that the document does not specify this
+ * preference.
+ *
+ * Returns: a #PopplerPrintDuplex that should be used when document is printed
+ *
+ * Since: 0.80
+ **/
+PopplerPrintDuplex
+poppler_document_get_print_duplex (PopplerDocument *document)
+{
+  Catalog *catalog;
+  ViewerPreferences *preferences;
+  PopplerPrintDuplex duplex = POPPLER_PRINT_DUPLEX_NONE;
+
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), POPPLER_PRINT_DUPLEX_NONE);
+
+  catalog = document->doc->getCatalog ();
+  if (catalog && catalog->isOk ()) {
+    preferences = catalog->getViewerPreferences();
+    if (preferences) {
+      switch (preferences->getDuplex()) {
+        default:
+        case ViewerPreferences::Duplex::duplexNone:
+          duplex = POPPLER_PRINT_DUPLEX_NONE;
+          break;
+        case ViewerPreferences::Duplex::duplexSimplex:
+          duplex = POPPLER_PRINT_DUPLEX_SIMPLEX;
+          break;
+        case ViewerPreferences::Duplex::duplexDuplexFlipShortEdge:
+          duplex = POPPLER_PRINT_DUPLEX_DUPLEX_FLIP_SHORT_EDGE;
+          break;
+        case ViewerPreferences::Duplex::duplexDuplexFlipLongEdge:
+          duplex = POPPLER_PRINT_DUPLEX_DUPLEX_FLIP_LONG_EDGE;
+          break;
+      }
+    }
+  }
+
+  return duplex;
+}
+
+/**
+ * poppler_document_get_print_n_copies:
+ * @document: A #PopplerDocument
+ *
+ * Returns the suggested number of copies to be printed.
+ * This preference should be applied only if returned value
+ * is greater than 1 since value 1 usually means that
+ * the document does not specify it.
+ *
+ * Returns: Number of copies
+ *
+ * Since: 0.80
+ **/
+gint
+poppler_document_get_print_n_copies (PopplerDocument *document)
+{
+  Catalog *catalog;
+  ViewerPreferences *preferences;
+  gint retval = 1;
+
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), 1);
+
+  catalog = document->doc->getCatalog ();
+  if (catalog && catalog->isOk ()) {
+    preferences = catalog->getViewerPreferences();
+    if (preferences) {
+      retval = preferences->getNumCopies();
+    }
+  }
+
+  return retval;
+}
+
+/**
+ * poppler_document_get_print_page_ranges:
+ * @document: A #PopplerDocument
+ * @n_ranges: (out): return location for number of ranges
+ *
+ * Returns the suggested page ranges to print in the form of array
+ * of #PopplerPageRanges and number of ranges.
+ * NULL pointer means that the document does not specify page ranges
+ * for printing.
+ *
+ * Returns: (array length=n_ranges) (transfer full): an array
+ *          of #PopplerPageRanges or NULL. Free the array when
+ *          it is no longer needed.
+ *
+ * Since: 0.80
+ **/
+PopplerPageRange *
+poppler_document_get_print_page_ranges (PopplerDocument *document,
+                                        int             *n_ranges)
+{
+  Catalog *catalog;
+  ViewerPreferences *preferences;
+  std::vector<std::pair<int, int>> ranges;
+  PopplerPageRange *result = nullptr;
+
+  g_return_val_if_fail (n_ranges != nullptr, nullptr);
+  *n_ranges = 0;
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), nullptr);
+
+  catalog = document->doc->getCatalog ();
+  if (catalog && catalog->isOk ()) {
+    preferences = catalog->getViewerPreferences ();
+    if (preferences) {
+      ranges = preferences->getPrintPageRange ();
+
+      *n_ranges = ranges.size ();
+      result = g_new (PopplerPageRange, ranges.size ());
+      for (size_t i = 0; i < ranges.size (); ++i) {
+        result[i].start_page = ranges[i].first;
+        result[i].end_page = ranges[i].second;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * poppler_document_get_permissions:
  * @document: A #PopplerDocument
  *
  * Returns the flags specifying which operations are permitted when the document is opened.
  *
- * Return value: a set of falgs from  #PopplerPermissions enumeration
+ * Return value: a set of flags from  #PopplerPermissions enumeration
  *
  * Since: 0.16
  **/
@@ -1353,6 +1869,108 @@ poppler_document_get_permissions (PopplerDocument *document)
 }
 
 /**
+ * poppler_document_get_pdf_subtype_string:
+ * @document: A #PopplerDocument
+ *
+ * Returns the PDF subtype version of @document as a string.
+ *
+ * Returns: (transfer full) (nullable): a newly allocated string containing
+ * the PDF subtype version of @document, or %NULL
+ *
+ * Since: 0.70
+ **/
+gchar *
+poppler_document_get_pdf_subtype_string (PopplerDocument *document)
+{
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), NULL);
+
+  GooString *infostring;
+
+  switch (document->doc->getPDFSubtype ())
+    {
+    case subtypePDFA:
+      infostring = document->doc->getDocInfoStringEntry ("GTS_PDFA1Version");
+      break;
+    case subtypePDFE:
+      infostring = document->doc->getDocInfoStringEntry ("GTS_PDFEVersion");
+      break;
+    case subtypePDFUA:
+      infostring = document->doc->getDocInfoStringEntry ("GTS_PDFUAVersion");
+      break;
+    case subtypePDFVT:
+      infostring = document->doc->getDocInfoStringEntry ("GTS_PDFVTVersion");
+      break;
+    case subtypePDFX:
+      infostring = document->doc->getDocInfoStringEntry ("GTS_PDFXVersion");
+      break;
+    case subtypeNone:
+    case subtypeNull:
+    default:
+      infostring = nullptr;
+    }
+
+  gchar *utf8 = _poppler_goo_string_to_utf8 (infostring);
+  delete infostring;
+
+  return utf8;
+}
+
+/**
+ * poppler_document_get_pdf_subtype:
+ * @document: A #PopplerDocument
+ *
+ * Returns the subtype of @document as a #PopplerPDFSubtype.
+ *
+ * Returns: the document's subtype
+ *
+ * Since: 0.70
+ **/
+PopplerPDFSubtype
+poppler_document_get_pdf_subtype (PopplerDocument *document)
+{
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), POPPLER_PDF_SUBTYPE_NONE);
+
+  return convert_pdf_subtype (document->doc->getPDFSubtype ());
+}
+
+/**
+ * poppler_document_get_pdf_part:
+ * @document: A #PopplerDocument
+ *
+ * Returns the part of the conforming standard that the @document adheres to
+ * as a #PopplerPDFSubtype.
+ *
+ * Returns: the document's subtype part
+ *
+ * Since: 0.70
+ **/
+PopplerPDFPart
+poppler_document_get_pdf_part (PopplerDocument *document)
+{
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), POPPLER_PDF_SUBTYPE_PART_NONE);
+
+  return convert_pdf_subtype_part (document->doc->getPDFSubtypePart ());
+}
+
+/**
+ * poppler_document_get_pdf_conformance:
+ * @document: A #PopplerDocument
+ *
+ * Returns the conformance level of the @document as #PopplerPDFConformance.
+ *
+ * Returns: the document's subtype conformance level
+ *
+ * Since: 0.70
+ **/
+PopplerPDFConformance
+poppler_document_get_pdf_conformance (PopplerDocument *document)
+{
+  g_return_val_if_fail (POPPLER_IS_DOCUMENT (document), POPPLER_PDF_SUBTYPE_CONF_NONE);
+
+  return convert_pdf_subtype_conformance (document->doc->getPDFSubtypeConformance ());
+}
+
+/**
  * poppler_document_get_metadata:
  * @document: A #PopplerDocument
  *
@@ -1376,7 +1994,7 @@ poppler_document_get_metadata (PopplerDocument *document)
     GooString *s = catalog->readMetadata ();
 
     if (s != nullptr) {
-      retval = g_strdup (s->getCString());
+      retval = g_strdup (s->c_str());
       delete s;
     }
   }
@@ -1443,8 +2061,29 @@ poppler_document_get_property (GObject    *object,
       /* FIXME: write... */
       g_value_set_flags (value, POPPLER_VIEWER_PREFERENCES_UNSET);
       break;
+    case PROP_PRINT_SCALING:
+      g_value_set_enum (value, poppler_document_get_print_scaling (document));
+      break;
+    case PROP_PRINT_DUPLEX:
+      g_value_set_enum (value, poppler_document_get_print_duplex (document));
+      break;
+    case PROP_PRINT_N_COPIES:
+      g_value_set_int (value, poppler_document_get_print_n_copies (document));
+      break;
     case PROP_PERMISSIONS:
       g_value_set_flags (value, poppler_document_get_permissions (document));
+      break;
+    case PROP_SUBTYPE:
+      g_value_set_enum (value, poppler_document_get_pdf_subtype (document));
+      break;
+    case PROP_SUBTYPE_STRING:
+      g_value_take_string (value, poppler_document_get_pdf_subtype_string (document));
+      break;
+    case PROP_SUBTYPE_PART:
+      g_value_set_enum (value, poppler_document_get_pdf_part (document));
+      break;
+    case PROP_SUBTYPE_CONF:
+      g_value_set_enum (value, poppler_document_get_pdf_conformance (document));
       break;
     case PROP_METADATA:
       g_value_take_string (value, poppler_document_get_metadata (document));
@@ -1699,6 +2338,49 @@ poppler_document_class_init (PopplerDocumentClass *klass)
 						       G_PARAM_READABLE));
 
   /**
+   * PopplerDocument:print-scaling:
+   *
+   * Since: 0.73
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_PRINT_SCALING,
+				   g_param_spec_enum ("print-scaling",
+						      "Print Scaling",
+						      "Print Scaling Viewer Preference",
+						      POPPLER_TYPE_PRINT_SCALING,
+						      POPPLER_PRINT_SCALING_APP_DEFAULT,
+						      (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
+
+  /**
+   * PopplerDocument:print-duplex:
+   *
+   * Since: 0.80
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_PRINT_DUPLEX,
+				   g_param_spec_enum ("print-duplex",
+						      "Print Duplex",
+						      "Duplex Viewer Preference",
+						      POPPLER_TYPE_PRINT_DUPLEX,
+						      POPPLER_PRINT_DUPLEX_NONE,
+						      (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
+
+  /**
+   * PopplerDocument:print-n-copies:
+   *
+   * Suggested number of copies to be printed for this document
+   *
+   * Since: 0.80
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_PRINT_N_COPIES,
+				   g_param_spec_int ("print-n-copies",
+						     "Number of Copies to Print",
+						     "Number of Copies Viewer Preference",
+						     1, G_MAXINT, 1,
+						     (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
+
+  /**
    * PopplerDocument:permissions:
    *
    * Flags specifying which operations are permitted when the document is opened
@@ -1710,6 +2392,61 @@ poppler_document_class_init (PopplerDocumentClass *klass)
 						       "Permissions",
 						       POPPLER_TYPE_PERMISSIONS,
 						       POPPLER_PERMISSIONS_FULL,
+						       G_PARAM_READABLE));
+
+  /**
+   * PopplerDocument:subtype:
+   *
+   *  Document PDF subtype type
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_SUBTYPE,
+				   g_param_spec_enum ("subtype",
+						       "PDF Format Subtype Type",
+						       "The PDF subtype of the document",
+						       POPPLER_TYPE_PDF_SUBTYPE,
+						       POPPLER_PDF_SUBTYPE_UNSET,
+						       G_PARAM_READABLE));
+
+  /**
+   * PopplerDocument:subtype-string:
+   *
+   *  Document PDF subtype. See also poppler_document_get_pdf_subtype_string()
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_SUBTYPE_STRING,
+				   g_param_spec_string ("subtype-string",
+						       "PDF Format Subtype",
+						       "The PDF subtype of the document",
+						       nullptr,
+						       G_PARAM_READABLE));
+
+  /**
+   * PopplerDocument:subtype-part:
+   *
+   *  Document PDF subtype part
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_SUBTYPE_PART,
+						       g_param_spec_enum ("subtype-part",
+						       "PDF Format Subtype Part",
+						       "The part of PDF conformance",
+						       POPPLER_TYPE_PDF_PART,
+						       POPPLER_PDF_SUBTYPE_PART_UNSET,
+						       G_PARAM_READABLE));
+
+  /**
+   * PopplerDocument:subtype-conformance:
+   *
+   *  Document PDF subtype conformance
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+				   PROP_SUBTYPE_CONF,
+				   g_param_spec_enum ("subtype-conformance",
+						       "PDF Format Subtype Conformance",
+						       "The conformance level of PDF subtype",
+						       POPPLER_TYPE_PDF_CONFORMANCE,
+						       POPPLER_PDF_SUBTYPE_CONF_UNSET,
 						       G_PARAM_READABLE));
 
   /**
@@ -1735,7 +2472,7 @@ poppler_document_init (PopplerDocument *document)
 struct _PopplerIndexIter
 {
 	PopplerDocument *document;
-	const GooList *items;
+	const std::vector<OutlineItem*> *items;
 	int index;
 };
 
@@ -1787,7 +2524,7 @@ poppler_index_iter_copy (PopplerIndexIter *iter)
  * {
  *   do
  *     {
- *       /<!-- -->* Get the the action and do something with it *<!-- -->/
+ *       /<!-- -->* Get the action and do something with it *<!-- -->/
  *       PopplerIndexIter *child = poppler_index_iter_get_child (iter);
  *       if (child)
  *         walk_index (child);
@@ -1810,7 +2547,7 @@ poppler_index_iter_new (PopplerDocument *document)
 {
 	PopplerIndexIter *iter;
 	Outline *outline;
-	const GooList *items;
+	const std::vector<OutlineItem*> *items;
 
 	outline = document->doc->getOutline();
 	if (outline == nullptr)
@@ -1845,7 +2582,7 @@ poppler_index_iter_get_child (PopplerIndexIter *parent)
 
 	g_return_val_if_fail (parent != nullptr, NULL);
 	
-	item = (OutlineItem *)parent->items->get (parent->index);
+	item = (*parent->items)[parent->index];
 	item->open ();
 	if (! (item->hasKids() && item->getKids()) )
 		return nullptr;
@@ -1863,13 +2600,7 @@ static gchar *
 unicode_to_char (const Unicode *unicode,
 		 int      len)
 {
-	static UnicodeMap *uMap = nullptr;
-	if (uMap == nullptr) {
-		GooString *enc = new GooString("UTF-8");
-		uMap = globalParams->getUnicodeMap(enc);
-		uMap->incRefCnt ();
-		delete enc;
-	}
+	const UnicodeMap *uMap = globalParams->getUtf8Map();
 		
 	GooString gstr;
 	gchar buf[8]; /* 8 is enough for mapping an unicode char to a string */
@@ -1880,7 +2611,7 @@ unicode_to_char (const Unicode *unicode,
 		gstr.append(buf, n);
 	}
 
-	return g_strdup (gstr.getCString ());
+	return g_strdup (gstr.c_str ());
 }
 
 /**
@@ -1898,7 +2629,7 @@ poppler_index_iter_is_open (PopplerIndexIter *iter)
 {
 	OutlineItem *item;
 
-	item = (OutlineItem *)iter->items->get (iter->index);
+	item = (*iter->items)[iter->index];
 
 	return item->isOpen();
 }
@@ -1922,7 +2653,7 @@ poppler_index_iter_get_action (PopplerIndexIter  *iter)
 
 	g_return_val_if_fail (iter != nullptr, NULL);
 
-	item = (OutlineItem *)iter->items->get (iter->index);
+	item = (*iter->items)[iter->index];
 	link_action = item->getAction ();
 
 	title = unicode_to_char (item->getTitle(),
@@ -1949,7 +2680,7 @@ poppler_index_iter_next (PopplerIndexIter *iter)
 	g_return_val_if_fail (iter != nullptr, FALSE);
 
 	iter->index++;
-	if (iter->index >= iter->items->getLength())
+	if (iter->index >= (int)iter->items->size())
 		return FALSE;
 
 	return TRUE;
@@ -1973,7 +2704,7 @@ poppler_index_iter_free (PopplerIndexIter *iter)
 
 struct _PopplerFontsIter
 {
-	GooList *items;
+	std::vector<FontInfo*> items;
 	int index;
 };
 
@@ -1992,14 +2723,14 @@ POPPLER_DEFINE_BOXED_TYPE (PopplerFontsIter, poppler_fonts_iter,
 const char *
 poppler_fonts_iter_get_full_name (PopplerFontsIter *iter)
 {
-	GooString *name;
+	const GooString *name;
 	FontInfo *info;
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	name = info->getName();
 	if (name != nullptr) {
-		return info->getName()->getCString();
+		return info->getName()->c_str();
 	} else {
 		return nullptr;
 	}
@@ -2020,7 +2751,7 @@ poppler_fonts_iter_get_name (PopplerFontsIter *iter)
 	const char *name;
 
 	name = poppler_fonts_iter_get_full_name (iter);
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	if (info->getSubset() && name) {
 		while (*name && *name != '+')
@@ -2047,14 +2778,14 @@ poppler_fonts_iter_get_name (PopplerFontsIter *iter)
 const char *
 poppler_fonts_iter_get_substitute_name (PopplerFontsIter *iter)
 {
-	GooString *name;
+	const GooString *name;
 	FontInfo *info;
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	name = info->getSubstituteName();
 	if (name != nullptr) {
-		return name->getCString();
+		return name->c_str();
 	} else {
 		return nullptr;
 	}
@@ -2072,14 +2803,14 @@ poppler_fonts_iter_get_substitute_name (PopplerFontsIter *iter)
 const char *
 poppler_fonts_iter_get_file_name (PopplerFontsIter *iter)
 {
-	GooString *file;
+	const GooString *file;
 	FontInfo *info;
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	file = info->getFile();
 	if (file != nullptr) {
-		return file->getCString();
+		return file->c_str();
 	} else {
 		return nullptr;
 	}
@@ -2100,7 +2831,7 @@ poppler_fonts_iter_get_font_type (PopplerFontsIter *iter)
 
 	g_return_val_if_fail (iter != nullptr, POPPLER_FONT_TYPE_UNKNOWN);
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	return (PopplerFontType)info->getType ();
 }
@@ -2118,14 +2849,14 @@ poppler_fonts_iter_get_font_type (PopplerFontsIter *iter)
 const char *
 poppler_fonts_iter_get_encoding (PopplerFontsIter *iter)
 {
-	GooString *encoding;
+	const GooString *encoding;
 	FontInfo *info;
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	encoding = info->getEncoding();
 	if (encoding != nullptr) {
-		return encoding->getCString();
+		return encoding->c_str();
 	} else {
 		return nullptr;
 	}
@@ -2137,14 +2868,14 @@ poppler_fonts_iter_get_encoding (PopplerFontsIter *iter)
  *
  * Returns whether the font associated with @iter is embedded in the document
  *
- * Returns: %TRUE if font is emebdded, %FALSE otherwise
+ * Returns: %TRUE if font is embedded, %FALSE otherwise
  */
 gboolean
 poppler_fonts_iter_is_embedded (PopplerFontsIter *iter)
 {
 	FontInfo *info;
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	return info->getEmbedded();
 }
@@ -2162,7 +2893,7 @@ poppler_fonts_iter_is_subset (PopplerFontsIter *iter)
 {
 	FontInfo *info;
 
-	info = (FontInfo *)iter->items->get (iter->index);
+	info = iter->items[iter->index];
 
 	return info->getSubset();
 }
@@ -2181,7 +2912,7 @@ poppler_fonts_iter_next (PopplerFontsIter *iter)
 	g_return_val_if_fail (iter != nullptr, FALSE);
 
 	iter->index++;
-	if (iter->index >= iter->items->getLength())
+	if (iter->index >= (int)iter->items.size())
 		return FALSE;
 
 	return TRUE;
@@ -2204,10 +2935,10 @@ poppler_fonts_iter_copy (PopplerFontsIter *iter)
 
 	new_iter = g_slice_dup (PopplerFontsIter, iter);
 
-	new_iter->items = new GooList ();
-	for (int i = 0; i < iter->items->getLength(); i++) {
-		FontInfo *info = (FontInfo *)iter->items->get(i);
-		new_iter->items->append (new FontInfo (*info));
+	new_iter->items.resize(iter->items.size());
+	for (std::size_t i = 0; i < iter->items.size(); i++) {
+		FontInfo *info = iter->items[i];
+		new_iter->items[i] = new FontInfo (*info);
 	}
 
 	return new_iter;
@@ -2225,18 +2956,21 @@ poppler_fonts_iter_free (PopplerFontsIter *iter)
 	if (G_UNLIKELY (iter == nullptr))
 		return;
 
-	deleteGooList (iter->items, FontInfo);
+        for (auto entry : iter->items) {
+          delete entry;
+        }
+        iter->items.~vector<FontInfo*>();
 
 	g_slice_free (PopplerFontsIter, iter);
 }
 
 static PopplerFontsIter *
-poppler_fonts_iter_new (GooList *items)
+poppler_fonts_iter_new (std::vector<FontInfo*> &&items)
 {
 	PopplerFontsIter *iter;
 
 	iter = g_slice_new (PopplerFontsIter);
-	iter->items = items;
+	new ((void*)&iter->items) std::vector<FontInfo*>(std::move(items));
 	iter->index = 0;
 
 	return iter;
@@ -2335,22 +3069,18 @@ poppler_font_info_scan (PopplerFontInfo   *font_info,
 			int                n_pages,
 			PopplerFontsIter **iter)
 {
-	GooList *items;
-
 	g_return_val_if_fail (iter != nullptr, FALSE);
 
-	items = font_info->scanner->scan(n_pages);
+	std::vector<FontInfo*> items = font_info->scanner->scan(n_pages);
 
-	if (items == nullptr) {
+	if (items.empty()) {
 		*iter = nullptr;
-	} else if (items->getLength() == 0) {
-		*iter = nullptr;
-		delete items;
+		return FALSE;
 	} else {
-		*iter = poppler_fonts_iter_new(items);
+		*iter = poppler_fonts_iter_new(std::move(items));
 	}
 	
-	return (items != nullptr);
+	return TRUE;
 }
 
 /* For backward compatibility */
@@ -2382,8 +3112,7 @@ layer_free (Layer *layer)
     return;
 
   if (layer->kids) {
-	  g_list_foreach (layer->kids, (GFunc)layer_free, nullptr);
-	  g_list_free (layer->kids);
+	  g_list_free_full (layer->kids, (GDestroyNotify)layer_free);
   }
 
   if (layer->label) {
@@ -2417,7 +3146,7 @@ get_optional_content_rbgroups (OCGs *ocg)
       for (j = 0; j < rb_array->getLength (); ++j) {
 	OptionalContentGroup *oc;
 
-        Object ref = rb_array->getNF (j);
+        const Object &ref = rb_array->getNF (j);
 	if (!ref.isRef ()) {
 	  continue;
 	}
@@ -2460,7 +3189,7 @@ get_optional_content_items_sorted (OCGs *ocg, Layer *parent, Array *order)
     Object orderItem = order->get (i);
 
     if (orderItem.isDict ()) {
-      Object ref = order->getNF (i);
+      const Object &ref = order->getNF (i);
       if (ref.isRef ()) {
         OptionalContentGroup *oc = ocg->findOcgByRef (ref.getRef ());
 	Layer *layer = layer_new (oc);
@@ -2531,11 +3260,8 @@ poppler_document_layers_free (PopplerDocument *document)
   if (G_UNLIKELY (!document->layers))
     return;
 
-  g_list_foreach (document->layers, (GFunc)layer_free, nullptr);
-  g_list_free (document->layers);
-
-  g_list_foreach (document->layers_rbgroups, (GFunc)g_list_free, nullptr);
-  g_list_free (document->layers_rbgroups);
+  g_list_free_full (document->layers, (GDestroyNotify)layer_free);
+  g_list_free_full (document->layers_rbgroups, (GDestroyNotify)g_list_free);
 
   document->layers = nullptr;
   document->layers_rbgroups = nullptr;
@@ -2894,11 +3620,11 @@ _poppler_convert_pdf_date_to_gtime (const GooString *date,
   gboolean retval;
 
   if (date->hasUnicodeMarker()) {
-    date_string = g_convert (date->getCString () + 2,
+    date_string = g_convert (date->c_str () + 2,
 			     date->getLength () - 2,
 			     "UTF-8", "UTF-16BE", nullptr, nullptr, nullptr);		
   } else {
-    date_string = g_strndup (date->getCString (), date->getLength ());
+    date_string = g_strndup (date->c_str (), date->getLength ());
   }
 
   retval = poppler_date_parse (date_string, gdate);

@@ -17,7 +17,7 @@
 // Copyright (C) 2005-2007 Jeff Muizelaar <jeff@infidigm.net>
 // Copyright (C) 2005, 2006 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2005 Martin Kretzschmar <martink@gnome.org>
-// Copyright (C) 2005, 2009, 2012, 2013, 2015, 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005, 2009, 2012, 2013, 2015, 2017-2019 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2006, 2007, 2010, 2011 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2007 Koji Otani <sho@bbr.jp>
 // Copyright (C) 2008, 2009 Chris Wilson <chris@chris-wilson.co.uk>
@@ -28,6 +28,8 @@
 // Copyright (C) 2012 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2015, 2016 Jason Crain <jason@aquaticape.us>
+// Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+// Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -37,7 +39,7 @@
 #include <config.h>
 
 #include "config.h"
-#include <string.h>
+#include <cstring>
 #include "CairoFontEngine.h"
 #include "CairoOutputDev.h"
 #include "GlobalParams.h"
@@ -56,16 +58,6 @@
 #define CAN_CHECK_OPEN_FACES 1
 #endif
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#ifdef MULTITHREADED
-#  define fontEngineLocker()   MutexLocker locker(&mutex)
-#else
-#  define fontEngineLocker()
-#endif
-
 //------------------------------------------------------------------------
 // CairoFont
 //------------------------------------------------------------------------
@@ -73,9 +65,9 @@
 CairoFont::CairoFont(Ref refA,
 		     cairo_font_face_t *cairo_font_faceA,
 		     int *codeToGIDA,
-		     Guint codeToGIDLenA,
-		     GBool substituteA,
-		     GBool printingA) : ref(refA),
+		     unsigned int codeToGIDLenA,
+		     bool substituteA,
+		     bool printingA) : ref(refA),
 				       cairo_font_face(cairo_font_faceA),
 				       codeToGID(codeToGIDA),
 				       codeToGIDLen(codeToGIDLenA),
@@ -87,19 +79,19 @@ CairoFont::~CairoFont() {
   gfree(codeToGID);
 }
 
-GBool
-CairoFont::matches(Ref &other, GBool printingA) {
-  return (other.num == ref.num && other.gen == ref.gen);
+bool
+CairoFont::matches(Ref &other, bool printingA) {
+  return (other == ref);
 }
 
 cairo_font_face_t *
-CairoFont::getFontFace(void) {
+CairoFont::getFontFace() {
   return cairo_font_face;
 }
 
 unsigned long
 CairoFont::getGlyph(CharCode code,
-		    Unicode *u, int uLen) {
+		    const Unicode *u, int uLen) {
   FT_UInt gid;
 
   if (codeToGID && code < codeToGIDLen) {
@@ -115,7 +107,7 @@ CairoFont::getSubstitutionCorrection(GfxFont *gfxFont)
 {
   double w1, w2, w3;
   CharCode code;
-  char *name;
+  const char *name;
 
   // for substituted fonts: adjust the font matrix -- compare the
   // width of 'm' in the original font and the substituted font
@@ -170,7 +162,7 @@ _ft_done_face_uncached (void *closure)
     FT_Done_Face (face);
 }
 
-static GBool
+static bool
 _ft_new_face_uncached (FT_Library lib,
 		       const char *filename,
 		       char *font_data,
@@ -183,10 +175,10 @@ _ft_new_face_uncached (FT_Library lib,
 
   if (font_data == nullptr) {
     if (FT_New_Face (lib, filename, 0, &face))
-      return gFalse;
+      return false;
   } else {
     if (FT_New_Memory_Face (lib, (unsigned char *)font_data, font_data_len, 0, &face))
-      return gFalse;
+      return false;
   }
 
   font_face = cairo_ft_font_face_create_for_ft_face (face,
@@ -199,12 +191,12 @@ _ft_new_face_uncached (FT_Library lib,
   {
     _ft_done_face_uncached (face);
     cairo_font_face_destroy (font_face);
-    return gFalse;
+    return false;
   }
 
   *face_out = face;
   *font_face_out = font_face;
-  return gTrue;
+  return true;
 }
 
 #ifdef CAN_CHECK_OPEN_FACES
@@ -233,15 +225,15 @@ _djb_hash (const unsigned char *bytes, size_t len)
   return hash;
 }
 
-static GBool
+static bool
 _ft_face_data_equal (struct _ft_face_data *a, struct _ft_face_data *b)
 {
   if (a->lib != b->lib)
-    return gFalse;
+    return false;
   if (a->size != b->size)
-    return gFalse;
+    return false;
   if (a->hash != b->hash)
-    return gFalse;
+    return false;
 
   return memcmp (a->bytes, b->bytes, a->size) == 0;
 }
@@ -273,7 +265,7 @@ _ft_done_face (void *closure)
   gfree (data);
 }
 
-static GBool
+static bool
 _ft_new_face (FT_Library lib,
 	      const char *filename,
 	      char *font_data,
@@ -289,7 +281,7 @@ _ft_new_face (FT_Library lib,
 
   if (font_data == nullptr) {
     /* if we fail to mmap the file, just pass it to FreeType instead */
-    tmpl.fd = open (filename, O_RDONLY);
+    tmpl.fd = openFileDescriptor (filename, O_RDONLY);
     if (tmpl.fd == -1)
       return _ft_new_face_uncached (lib, filename, font_data, font_data_len, face_out, font_face_out);
 
@@ -329,7 +321,7 @@ _ft_new_face (FT_Library lib,
       }
       *face_out = l->face;
       *font_face_out = cairo_font_face_reference (l->font_face);
-      return gTrue;
+      return true;
     }
   }
 
@@ -347,7 +339,7 @@ _ft_new_face (FT_Library lib,
 
       close (tmpl.fd);
     }
-    return gFalse;
+    return false;
   }
 
   l = (struct _ft_face_data *) gmallocn (1, sizeof (struct _ft_face_data));
@@ -368,12 +360,12 @@ _ft_new_face (FT_Library lib,
   {
     cairo_font_face_destroy (l->font_face);
     _ft_done_face (l);
-    return gFalse;
+    return false;
   }
 
   *face_out = l->face;
   *font_face_out = l->font_face;
-  return gTrue;
+  return true;
 }
 #else
 #define _ft_new_face _ft_new_face_uncached
@@ -382,20 +374,20 @@ _ft_new_face (FT_Library lib,
 CairoFreeTypeFont::CairoFreeTypeFont(Ref refA,
 				     cairo_font_face_t *cairo_font_faceA,
 				     int *codeToGIDA,
-				     Guint codeToGIDLenA,
-				     GBool substituteA) : CairoFont(refA,
+				     unsigned int codeToGIDLenA,
+				     bool substituteA) : CairoFont(refA,
 								   cairo_font_faceA,
 								   codeToGIDA,
 								   codeToGIDLenA,
 								   substituteA,
-								   gTrue) { }
+								   true) { }
 
 CairoFreeTypeFont::~CairoFreeTypeFont() { }
 
 CairoFreeTypeFont *CairoFreeTypeFont::create(GfxFont *gfxFont, XRef *xref,
-					     FT_Library lib, GBool useCIDs) {
+					     FT_Library lib, bool useCIDs) {
   GooString *fileName;
-  char *fileNameC;
+  const char *fileNameC;
   char *font_data;
   int font_data_len;
   int i, n;
@@ -410,7 +402,7 @@ CairoFreeTypeFont *CairoFreeTypeFont::create(GfxFont *gfxFont, XRef *xref,
   cairo_font_face_t *font_face;
 
   int *codeToGID;
-  Guint codeToGIDLen;
+  unsigned int codeToGIDLen;
   
   codeToGID = nullptr;
   codeToGIDLen = 0;
@@ -419,14 +411,14 @@ CairoFreeTypeFont *CairoFreeTypeFont::create(GfxFont *gfxFont, XRef *xref,
   fileName = nullptr;
   fileNameC = nullptr;
 
-  GBool substitute = gFalse;
+  bool substitute = false;
   
   ref = *gfxFont->getID();
   fontType = gfxFont->getType();
 
   if (!(fontLoc = gfxFont->locateFont(xref, nullptr))) {
     error(errSyntaxError, -1, "Couldn't find a font for '{0:s}'",
-    	gfxFont->getName() ? gfxFont->getName()->getCString()
+    	gfxFont->getName() ? gfxFont->getName()->c_str()
 	                       : "(unnamed)");
     goto err2;
   }
@@ -441,11 +433,11 @@ CairoFreeTypeFont *CairoFreeTypeFont::create(GfxFont *gfxFont, XRef *xref,
   } else { // gfxFontLocExternal
     fileName = fontLoc->path;
     fontType = fontLoc->fontType;
-    substitute = gTrue;
+    substitute = true;
   }
 
   if (fileName != nullptr) {
-    fileNameC = fileName->getCString();
+    fileNameC = fileName->c_str();
   }
 
   switch (fontType) {
@@ -616,7 +608,7 @@ typedef struct _type3_font_info {
   GfxFont *font;
   PDFDoc *doc;
   CairoFontEngine *fontEngine;
-  GBool printing;
+  bool printing;
   XRef *xref;
 } type3_font_info_t;
 
@@ -636,13 +628,12 @@ _init_type3_glyph (cairo_scaled_font_t  *scaled_font,
 {
   type3_font_info_t *info;
   GfxFont *font;
-  double *mat;
 
   info = (type3_font_info_t *)
     cairo_font_face_get_user_data (cairo_scaled_font_get_font_face (scaled_font),
 				   &type3_font_key);
   font = info->font;
-  mat = font->getFontBBox();
+  const double *mat = font->getFontBBox();
   extents->ascent = mat[3]; /* y2 */
   extents->descent = -mat[3]; /* -y1 */
   extents->height = extents->ascent + extents->descent;
@@ -662,7 +653,7 @@ _render_type3_glyph (cairo_scaled_font_t  *scaled_font,
   Object charProc;
   CairoOutputDev *output_dev;
   cairo_matrix_t matrix, invert_y_axis;
-  double *mat;
+  const double *mat;
   double wx, wy;
   PDFRectangle box;
   type3_font_info_t *info;
@@ -706,7 +697,7 @@ _render_type3_glyph (cairo_scaled_font_t  *scaled_font,
   gfx = new Gfx(info->doc, output_dev, resDict, &box, nullptr);
   output_dev->startDoc(info->doc, info->fontEngine);
   output_dev->startPage (1, gfx->getState(), gfx->getXRef());
-  output_dev->setInType3Char(gTrue);
+  output_dev->setInType3Char(true);
   charProc = charProcs->getVal(glyph);
   gfx->display(&charProc);
 
@@ -734,12 +725,12 @@ _render_type3_glyph (cairo_scaled_font_t  *scaled_font,
 
 CairoType3Font *CairoType3Font::create(GfxFont *gfxFont, PDFDoc *doc,
 				       CairoFontEngine *fontEngine,
-				       GBool printing, XRef *xref) {
+				       bool printing, XRef *xref) {
   type3_font_info_t *info;
   cairo_font_face_t *font_face;
   Ref ref;
   int *codeToGID;
-  Guint codeToGIDLen;
+  unsigned int codeToGIDLen;
   int i, j;
   char **enc;
   Dict *charProcs;
@@ -774,33 +765,34 @@ CairoType3Font *CairoType3Font::create(GfxFont *gfxFont, PDFDoc *doc,
     }
   }
 
-  return new CairoType3Font(ref, doc, font_face, codeToGID, codeToGIDLen, printing, xref);
+  return new CairoType3Font(ref, font_face, codeToGID, codeToGIDLen, printing, xref);
 }
 
 CairoType3Font::CairoType3Font(Ref refA,
-			       PDFDoc *docA,
 			       cairo_font_face_t *cairo_font_faceA,
 			       int *codeToGIDA,
-			       Guint codeToGIDLenA,
-			       GBool printingA, XRef *xref) : CairoFont(refA,
+			       unsigned int codeToGIDLenA,
+			       bool printingA, XRef *xref) : CairoFont(refA,
 							   cairo_font_faceA,
 							   codeToGIDA,
 							   codeToGIDLenA,
-							   gFalse,
-							   printingA),
-						 doc(docA) { }
+							   false,
+							   printingA)
+{ }
 
 CairoType3Font::~CairoType3Font() { }
 
-GBool
-CairoType3Font::matches(Ref &other, GBool printingA) {
-  return (other.num == ref.num && other.gen == ref.gen && printing == printingA);
+bool
+CairoType3Font::matches(Ref &other, bool printingA) {
+  return (other == ref && printing == printingA);
 }
 
 
 //------------------------------------------------------------------------
 // CairoFontEngine
 //------------------------------------------------------------------------
+
+#define fontEngineLocker()   std::unique_lock<std::recursive_mutex> locker(mutex)
 
 CairoFontEngine::CairoFontEngine(FT_Library libA) {
   int i;
@@ -815,9 +807,6 @@ CairoFontEngine::CairoFontEngine(FT_Library libA) {
   FT_Library_Version(lib, &major, &minor, &patch);
   useCIDs = major > 2 ||
             (major == 2 && (minor > 1 || (minor == 1 && patch > 7)));
-#ifdef MULTITHREADED
-  gInitMutex(&mutex);
-#endif
 }
 
 CairoFontEngine::~CairoFontEngine() {
@@ -827,13 +816,10 @@ CairoFontEngine::~CairoFontEngine() {
     if (fontCache[i])
       delete fontCache[i];
   }
-#ifdef MULTITHREADED
-  gDestroyMutex(&mutex);
-#endif
 }
 
 CairoFont *
-CairoFontEngine::getFont(GfxFont *gfxFont, PDFDoc *doc, GBool printing, XRef *xref) {
+CairoFontEngine::getFont(GfxFont *gfxFont, PDFDoc *doc, bool printing, XRef *xref) {
   int i, j;
   Ref ref;
   CairoFont *font;

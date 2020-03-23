@@ -1,5 +1,5 @@
 /* poppler-annotation.cc: qt interface to poppler
- * Copyright (C) 2006, 2009, 2012-2015, 2018 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006, 2009, 2012-2015, 2018, 2019 Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2006, 2008, 2010 Pino Toscano <pino@kde.org>
  * Copyright (C) 2012, Guillermo A. Amaral B. <gamaral@kde.org>
  * Copyright (C) 2012-2014 Fabio D'Urso <fabiodurso@hotmail.it>
@@ -8,7 +8,9 @@
  * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
  * Copyright (C) 2018 Intevation GmbH <intevation@intevation.de>
  * Copyright (C) 2018 Dileep Sankhla <sankhla.dileep96@gmail.com>
- * Copyright (C) 2018 Tobias Deiminger <haxtibal@posteo.de>
+ * Copyright (C) 2018, 2019 Tobias Deiminger <haxtibal@posteo.de>
+ * Copyright (C) 2018 Carlos Garcia Campos <carlosgc@gnome.org>
+ * Copyright (C) 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  * Adapting code from
  *   Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
  *
@@ -211,8 +213,8 @@ void AnnotationPrivate::fillNormalizationMTX(double MTX[6], int pageRotation) co
     Q_ASSERT ( pdfPage );
 
     // build a normalized transform matrix for this page at 100% scale
-    GfxState * gfxState = new GfxState( 72.0, 72.0, pdfPage->getCropBox(), pageRotation, gTrue );
-    double * gfxCTM = gfxState->getCTM();
+    GfxState * gfxState = new GfxState( 72.0, 72.0, pdfPage->getCropBox(), pageRotation, true );
+    const double * gfxCTM = gfxState->getCTM();
 
     double w = pdfPage->getCropWidth();
     double h = pdfPage->getCropHeight();
@@ -355,20 +357,20 @@ PDFRectangle AnnotationPrivate::boundaryToPdfRectangle(const QRectF &r, int rFla
 AnnotPath * AnnotationPrivate::toAnnotPath(const QLinkedList<QPointF> &list) const
 {
     const int count = list.size();
-    AnnotCoord **ac = (AnnotCoord **) gmallocn(count, sizeof(AnnotCoord*));
+    std::vector<AnnotCoord> ac;
+    ac.reserve(count);
 
     double MTX[6];
     fillTransformationMTX(MTX);
 
-    int pos = 0;
     foreach (const QPointF &p, list)
     {
         double x, y;
         XPDFReader::invTransform( MTX, p, x, y );
-        ac[pos++] = new AnnotCoord(x, y);
+	ac.emplace_back(x, y);
     }
 
-    return new AnnotPath(ac, count);
+    return new AnnotPath(std::move(ac));
 }
 
 QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentData *doc, const QSet<Annotation::SubType> &subtypes, int parentID)
@@ -411,7 +413,7 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
         if (!markupann)
         {
             // Assume it's a root annotation, and skip if user didn't request it
-            if (parentID != 0)
+            if (parentID != -1)
                 continue;
         }
         else if (markupann->getInReplyToID() != parentID)
@@ -507,7 +509,7 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
                 FileAttachmentAnnotation * f = new FileAttachmentAnnotation();
                 annotation = f;
                 // -> fileIcon
-                f->setFileIconName( QString::fromLatin1( attachann->getName()->getCString() ) );
+                f->setFileIconName( QString::fromLatin1( attachann->getName()->c_str() ) );
                 // -> embeddedFile
                 FileSpec *filespec = new FileSpec( attachann->getFile() );
                 f->setEmbeddedFile( new EmbeddedFile( *new EmbeddedFileData( filespec ) ) );
@@ -522,7 +524,7 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
                 annotation = s;
 
                 // -> soundIcon
-                s->setSoundIconName( QString::fromLatin1( soundann->getName()->getCString() ) );
+                s->setSoundIconName( QString::fromLatin1( soundann->getName()->c_str() ) );
                 // -> sound
                 s->setSound( new SoundObject( soundann->getSound() ) );
                 break;
@@ -541,7 +543,7 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
                 // -> movieTitle
                 const GooString * movietitle = movieann->getTitle();
                 if ( movietitle )
-                    m->setMovieTitle( QString::fromLatin1( movietitle->getCString() ) );
+                    m->setMovieTitle( QString::fromLatin1( movietitle->c_str() ) );
                 break;
             }
             case Annot::typeScreen:
@@ -768,8 +770,7 @@ Ref AnnotationPrivate::pdfObjectReference() const
 {
     if (pdfAnnot == nullptr)
     {
-        const Ref invalid_ref = { -1, -1 };
-        return invalid_ref;
+        return Ref::INVALID();
     }
 
     return pdfAnnot->getRef();
@@ -782,7 +783,7 @@ Link* AnnotationPrivate::additionalAction( Annotation::AdditionalActionType type
 
     const Annot::AdditionalActionsType actionType = toPopplerAdditionalActionType(type);
 
-    ::LinkAction *linkAction = nullptr;
+    std::unique_ptr<::LinkAction> linkAction = nullptr;
     if ( pdfAnnot->getType() == Annot::typeScreen )
         linkAction = static_cast<AnnotScreen*>( pdfAnnot )->getAdditionalAction( actionType );
     else
@@ -791,7 +792,7 @@ Link* AnnotationPrivate::additionalAction( Annotation::AdditionalActionType type
     Link *link = nullptr;
 
     if ( linkAction )
-        link = PageData::convertLinkActionToLink( linkAction, parentDoc, QRectF() );
+        link = PageData::convertLinkActionToLink( linkAction.get(), parentDoc, QRectF() );
 
     return link;
 }
@@ -1244,7 +1245,7 @@ void Annotation::storeBaseAnnotationProperties( QDomNode & annNode, QDomDocument
     bE.setAttribute( QStringLiteral("b"), QString::number( (double)brect.bottom() ) );
 
     // Sub-Node-2 - penStyle
-    const QVector<double> dashArray = s.dashArray();
+    const QVector<double> &dashArray = s.dashArray();
     if ( s.width() != 1 || s.lineStyle() != Solid || s.xCorners() != 0 ||
          s.yCorners() != 0.0 || dashArray.size() != 1 || dashArray[0] != 3 )
     {
@@ -1415,7 +1416,7 @@ QDateTime Annotation::modificationDate() const
         return d->modDate;
 
     if ( d->pdfAnnot->getModified() )
-        return convertDate( d->pdfAnnot->getModified()->getCString() );
+        return convertDate( d->pdfAnnot->getModified()->c_str() );
     else
         return QDateTime();
 }
@@ -1451,7 +1452,7 @@ QDateTime Annotation::creationDate() const
     const AnnotMarkup *markupann = dynamic_cast<const AnnotMarkup*>(d->pdfAnnot);
 
     if (markupann && markupann->getDate())
-        return convertDate( markupann->getDate()->getCString() );
+        return convertDate( markupann->getDate()->c_str() );
 
     return modificationDate();
 }
@@ -1643,11 +1644,11 @@ void Annotation::setStyle( const Annotation::Style& style )
     if (markupann)
         markupann->setOpacity( style.opacity() );
 
-    AnnotBorderArray * border = new AnnotBorderArray();
+    auto border = std::make_unique<AnnotBorderArray>();
     border->setWidth( style.width() );
     border->setHorizontalCorner( style.xCorners() );
     border->setVerticalCorner( style.yCorners() );
-    d->pdfAnnot->setBorder(border);
+    d->pdfAnnot->setBorder(std::move(border));
 }
 
 Annotation::Popup Annotation::popup() const
@@ -1740,7 +1741,7 @@ Annotation::RevScope Annotation::revisionScope() const
 
     const AnnotMarkup *markupann = dynamic_cast<const AnnotMarkup*>(d->pdfAnnot);
 
-    if (markupann && markupann->getInReplyToID() != 0)
+    if (markupann && markupann->isInReplyTo())
     {
         switch (markupann->getReplyTo())
         {
@@ -1763,7 +1764,7 @@ Annotation::RevType Annotation::revisionType() const
 
     const AnnotText *textann = dynamic_cast<const AnnotText*>(d->pdfAnnot);
 
-    if (textann && textann->getInReplyToID() != 0)
+    if (textann && textann->isInReplyTo())
     {
         switch (textann->getState())
         {
@@ -2061,7 +2062,7 @@ QString TextAnnotation::textIcon() const
     if (d->pdfAnnot->getType() == Annot::typeText)
     {
         const AnnotText * textann = static_cast<const AnnotText*>(d->pdfAnnot);
-        return QString::fromLatin1( textann->getIcon()->getCString() );
+        return QString::fromLatin1( textann->getIcon()->c_str() );
     }
 
     return QString();
@@ -2093,15 +2094,18 @@ QFont TextAnnotation::textFont() const
     if ( !d->pdfAnnot )
         return d->textFont;
 
-    QFont font;
+    double fontSize { AnnotFreeText::undefinedFontPtSize };
     if ( d->pdfAnnot->getType() == Annot::typeFreeText )
     {
-        if ( std::unique_ptr<DefaultAppearance> da{ d->getDefaultAppearanceFromNative() } )
+        std::unique_ptr<DefaultAppearance> da{ d->getDefaultAppearanceFromNative() };
+        if ( da && da->getFontPtSize() > 0 )
         {
-            font.setPointSize( da->getFontPtSize() );
+            fontSize = da->getFontPtSize();
         }
     }
 
+    QFont font;
+    font.setPointSizeF( fontSize );
     return font;
 }
 
@@ -2727,17 +2731,17 @@ void LineAnnotation::setLineInnerColor( const QColor &color )
         return;
     }
 
-    AnnotColor * c = convertQColor(color);
+    auto c = convertQColor(color);
 
     if (d->pdfAnnot->getType() == Annot::typeLine)
     {
         AnnotLine *lineann = static_cast<AnnotLine*>(d->pdfAnnot);
-        lineann->setInteriorColor(c);
+        lineann->setInteriorColor(std::move(c));
     }
     else
     {
         AnnotPolygon *polyann = static_cast<AnnotPolygon*>(d->pdfAnnot);
-        polyann->setInteriorColor(c);
+        polyann->setInteriorColor(std::move(c));
     }
 }
 
@@ -3138,9 +3142,7 @@ QList< HighlightAnnotation::Quad > HighlightAnnotationPrivate::fromQuadrilateral
 AnnotQuadrilaterals * HighlightAnnotationPrivate::toQuadrilaterals(const QList< HighlightAnnotation::Quad > &quads) const
 {
     const int count = quads.size();
-    AnnotQuadrilaterals::AnnotQuadrilateral **ac =
-        (AnnotQuadrilaterals::AnnotQuadrilateral**)
-            gmallocn( count, sizeof(AnnotQuadrilaterals::AnnotQuadrilateral*) );
+    auto ac = std::make_unique<AnnotQuadrilaterals::AnnotQuadrilateral[]>(count);
 
     double MTX[6];
     fillTransformationMTX(MTX);
@@ -3154,10 +3156,10 @@ AnnotQuadrilaterals * HighlightAnnotationPrivate::toQuadrilaterals(const QList< 
         // Swap points 3 and 4 (see HighlightAnnotationPrivate::fromQuadrilaterals)
         XPDFReader::invTransform( MTX, q.points[3], x3, y3 );
         XPDFReader::invTransform( MTX, q.points[2], x4, y4 );
-        ac[pos++] = new AnnotQuadrilaterals::AnnotQuadrilateral(x1, y1, x2, y2, x3, y3, x4, y4);
+        ac[pos++] = AnnotQuadrilaterals::AnnotQuadrilateral(x1, y1, x2, y2, x3, y3, x4, y4);
     }
 
-    return new AnnotQuadrilaterals(ac, count);
+    return new AnnotQuadrilaterals(std::move(ac), count);
 }
 
 Annot* HighlightAnnotationPrivate::createNativeAnnot(::Page *destPage, DocumentData *doc)
@@ -3452,7 +3454,7 @@ QString StampAnnotation::stampIconName() const
         return d->stampIconName;
 
     const AnnotStamp * stampann = static_cast<const AnnotStamp*>(d->pdfAnnot);
-    return QString::fromLatin1( stampann->getIcon()->getCString() );
+    return QString::fromLatin1( stampann->getIcon()->c_str() );
 }
 
 void StampAnnotation::setStampIconName( const QString &name )
@@ -3690,7 +3692,7 @@ class LinkAnnotationPrivate : public AnnotationPrivate
 {
     public:
         LinkAnnotationPrivate();
-        ~LinkAnnotationPrivate();
+        ~LinkAnnotationPrivate() override;
         Annotation * makeAlias() override;
         Annot* createNativeAnnot(::Page *destPage, DocumentData *doc) override;
 
@@ -4012,7 +4014,7 @@ QPointF LinkAnnotation::linkRegionPoint( int id ) const
     return d->linkRegion[id];
 }
 
-void LinkAnnotation::setLinkRegionPoint( int id, const QPointF &point )
+void LinkAnnotation::setLinkRegionPoint( int id, const QPointF &point ) // clazy:exclude=function-args-by-value
 {
     if ( id < 0 || id >= 4 )
         return;
@@ -4169,7 +4171,7 @@ class FileAttachmentAnnotationPrivate : public AnnotationPrivate
 {
     public:
         FileAttachmentAnnotationPrivate();
-        ~FileAttachmentAnnotationPrivate();
+        ~FileAttachmentAnnotationPrivate() override;
         Annotation * makeAlias() override;
         Annot* createNativeAnnot(::Page *destPage, DocumentData *doc) override;
 
@@ -4273,7 +4275,7 @@ class SoundAnnotationPrivate : public AnnotationPrivate
 {
     public:
         SoundAnnotationPrivate();
-        ~SoundAnnotationPrivate();
+        ~SoundAnnotationPrivate() override;
         Annotation * makeAlias() override;
         Annot* createNativeAnnot(::Page *destPage, DocumentData *doc) override;
 
@@ -4377,7 +4379,7 @@ class MovieAnnotationPrivate : public AnnotationPrivate
 {
     public:
         MovieAnnotationPrivate();
-        ~MovieAnnotationPrivate();
+        ~MovieAnnotationPrivate() override;
         Annotation * makeAlias() override;
         Annot* createNativeAnnot(::Page *destPage, DocumentData *doc) override;
 
@@ -4481,7 +4483,7 @@ class ScreenAnnotationPrivate : public AnnotationPrivate
 {
     public:
         ScreenAnnotationPrivate();
-        ~ScreenAnnotationPrivate();
+        ~ScreenAnnotationPrivate() override;
         Annotation * makeAlias() override;
         Annot* createNativeAnnot(::Page *destPage, DocumentData *doc) override;
 
@@ -4982,7 +4984,7 @@ class RichMediaAnnotationPrivate : public AnnotationPrivate
         {
         }
 
-        ~RichMediaAnnotationPrivate()
+        ~RichMediaAnnotationPrivate() override
         {
             delete settings;
             delete content;
@@ -5108,28 +5110,23 @@ QColor convertAnnotColor( const AnnotColor *color )
     return newcolor;
 }
 
-AnnotColor* convertQColor( const QColor &c )
+std::unique_ptr<AnnotColor> convertQColor( const QColor &c )
 {
     if ( c.alpha() == 0 )
-        return new AnnotColor(); // Transparent
+        return {}; // Transparent
 
-    AnnotColor *newcolor;
     switch ( c.spec() )
     {
         case QColor::Rgb:
         case QColor::Hsl:
         case QColor::Hsv:
-            newcolor = new AnnotColor( c.redF(), c.greenF(), c.blueF() );
-            break;
+            return std::make_unique<AnnotColor>( c.redF(), c.greenF(), c.blueF() );
         case QColor::Cmyk:
-            newcolor = new AnnotColor( c.cyanF(), c.magentaF(), c.yellowF(), c.blackF() );
-            break;
+            return std::make_unique<AnnotColor>( c.cyanF(), c.magentaF(), c.yellowF(), c.blackF() );
         case QColor::Invalid:
         default:
-            newcolor = new AnnotColor();
-            break;
+            return {};
     }
-    return newcolor;
 }
 //END utility annotation functions
 

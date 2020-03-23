@@ -13,7 +13,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2008, 2010, 2012, 2017 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008, 2010, 2012, 2017, 2019 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 //
@@ -24,11 +24,7 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#include <stddef.h>
+#include <cstddef>
 #include "Object.h"
 #include "Array.h"
 #include "Dict.h"
@@ -59,33 +55,12 @@ static const char *objTypeNames[numObjTypes] = {
   "dead"
 };
 
-Object::Object(Object&& other)
-{
-  type = other.type;
-  real = other.real; // this is the biggest of the union so it's enough
-  other.type = objDead;
-}
-
-Object& Object::operator=(Object&& other)
-{
-  free();
-  type = other.type;
-  real = other.real; // this is the biggest of the union so it's enough
-  other.type = objDead;
-  return *this;
-}
-
-Object::~Object()
-{
-  free();
-}
-
 Object Object::copy() const {
   CHECK_NOT_DEAD;
 
   Object obj;
-  obj.type = type;
-  obj.real = real; // this is the biggest of the union so it's enough
+  std::memcpy(reinterpret_cast<void*>(&obj), this, sizeof(Object));
+
   switch (type) {
   case objString:
     obj.string = string->copy();
@@ -106,6 +81,7 @@ Object Object::copy() const {
   default:
     break;
   }
+
   return obj;
 }
 
@@ -113,7 +89,7 @@ Object Object::fetch(XRef *xref, int recursion) const {
   CHECK_NOT_DEAD;
 
   return (type == objRef && xref) ?
-         xref->fetch(ref.num, ref.gen, recursion) : copy();
+         xref->fetch(ref, recursion) : copy();
 }
 
 void Object::free() {
@@ -151,7 +127,6 @@ const char *Object::getTypeName() const {
 }
 
 void Object::print(FILE *f) const {
-  Object obj;
   int i;
 
   switch (type) {
@@ -166,7 +141,7 @@ void Object::print(FILE *f) const {
     break;
   case objString:
     fprintf(f, "(");
-    fwrite(string->getCString(), 1, string->getLength(), f);
+    fwrite(string->c_str(), 1, string->getLength(), f);
     fprintf(f, ")");
     break;
   case objName:
@@ -180,7 +155,7 @@ void Object::print(FILE *f) const {
     for (i = 0; i < arrayGetLength(); ++i) {
       if (i > 0)
 	fprintf(f, " ");
-      obj = arrayGetNF(i);
+      const Object &obj = arrayGetNF(i);
       obj.print(f);
     }
     fprintf(f, "]");
@@ -189,7 +164,7 @@ void Object::print(FILE *f) const {
     fprintf(f, "<<");
     for (i = 0; i < dictGetLength(); ++i) {
       fprintf(f, " /%s ", dictGetKey(i));
-      obj = dictGetValNF(i);
+      const Object &obj = dictGetValNF(i);
       obj.print(f);
     }
     fprintf(f, " >>");

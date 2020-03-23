@@ -1,11 +1,12 @@
 /* poppler-link.cc: qt interface to poppler
- * Copyright (C) 2006-2007, 2013, 2016-2018, Albert Astals Cid
+ * Copyright (C) 2006-2007, 2013, 2016-2019, Albert Astals Cid
  * Copyright (C) 2007-2008, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2012, Tobias Koenig <tokoe@kdab.com>
  * Copyright (C) 2012, Guillermo A. Amaral B. <gamaral@kde.org>
  * Copyright (C) 2018 Intevation GmbH <intevation@intevation.de>
  * Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+ * Copyright (C) 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  * Adapting code from
  *   Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
  *
@@ -126,7 +127,7 @@ class LinkSoundPrivate : public LinkPrivate
 {
 	public:
 		LinkSoundPrivate( const QRectF &area );
-		~LinkSoundPrivate();
+		~LinkSoundPrivate() override;
 
 		double volume;
 		bool sync : 1;
@@ -148,8 +149,8 @@ class LinkSoundPrivate : public LinkPrivate
 class LinkRenditionPrivate : public LinkPrivate
 {
 	public:
-		LinkRenditionPrivate( const QRectF &area, ::MediaRendition *rendition, ::LinkRendition::RenditionOperation operation, const QString &script, const Ref &annotationReference );
-		~LinkRenditionPrivate();
+		LinkRenditionPrivate( const QRectF &area, ::MediaRendition *rendition, ::LinkRendition::RenditionOperation operation, const QString &script, const Ref ref );
+		~LinkRenditionPrivate() override;
 
 		MediaRendition *rendition;
 		LinkRendition::RenditionAction action;
@@ -157,7 +158,7 @@ class LinkRenditionPrivate : public LinkPrivate
 		Ref annotationReference;
 };
 
-	LinkRenditionPrivate::LinkRenditionPrivate( const QRectF &area, ::MediaRendition *r, ::LinkRendition::RenditionOperation operation, const QString &javaScript, const Ref &ref )
+	LinkRenditionPrivate::LinkRenditionPrivate( const QRectF &area, ::MediaRendition *r, ::LinkRendition::RenditionOperation operation, const QString &javaScript, const Ref ref )
 		: LinkPrivate( area )
 		, rendition( r ? new MediaRendition( r ) : nullptr )
 		, action( LinkRendition::PlayRendition )
@@ -205,14 +206,14 @@ class LinkJavaScriptPrivate : public LinkPrivate
 class LinkMoviePrivate : public LinkPrivate
 {
 	public:
-		LinkMoviePrivate( const QRectF &area, LinkMovie::Operation operation, const QString &title, const Ref &reference );
+		LinkMoviePrivate( const QRectF &area, LinkMovie::Operation operation, const QString &title, const Ref reference );
 
 		LinkMovie::Operation operation;
 		QString annotationTitle;
 		Ref annotationReference;
 };
 
-	LinkMoviePrivate::LinkMoviePrivate( const QRectF &area, LinkMovie::Operation _operation, const QString &title, const Ref &reference  )
+	LinkMoviePrivate::LinkMoviePrivate( const QRectF &area, LinkMovie::Operation _operation, const QString &title, const Ref reference  )
 		: LinkPrivate( area ), operation( _operation ), annotationTitle( title ), annotationReference( reference )
 	{
 	}
@@ -234,12 +235,12 @@ class LinkMoviePrivate : public LinkPrivate
 		if ( data.namedDest && !ld && !data.externalDest )
 		{
 			deleteDest = true;
-			ld = data.doc->doc->findDest( data.namedDest );
+			ld = data.doc->doc->findDest( data.namedDest ).release();
 		}
 		// in case this destination was named one, and it was not resolved
 		if ( data.namedDest && !ld )
 		{
-			d->name = QString::fromLatin1( data.namedDest->getCString() );
+			d->name = QString::fromLatin1( data.namedDest->c_str() );
 		}
 		
 		if (!ld) return;
@@ -256,8 +257,8 @@ class LinkMoviePrivate : public LinkPrivate
 		if ( !ld->isPageRef() ) d->pageNum = ld->getPageNum();
 		else
 		{
-			Ref ref = ld->getPageRef();
-			d->pageNum = data.doc->doc->findPage( ref.num, ref.gen );
+			const Ref ref = ld->getPageRef();
+			d->pageNum = data.doc->doc->findPage( ref );
 		}
 		double left = ld->getLeft();
 		double bottom = ld->getBottom();
@@ -430,11 +431,11 @@ class LinkMoviePrivate : public LinkPrivate
 	}
 
 	// LinkGoto
-	LinkGoto::LinkGoto( const QRectF &linkArea, QString extFileName, const LinkDestination & destination )
+	LinkGoto::LinkGoto( const QRectF &linkArea, QString extFileName, const LinkDestination & destination ) // clazy:exclude=function-args-by-ref
 		: Link( *new LinkGotoPrivate( linkArea, destination ) )
 	{
 		Q_D( LinkGoto );
-		d->extFileName = extFileName;
+		d->extFileName = std::move(extFileName); // TODO remove when extFileName moves to be a const &
 	}
 	
 	LinkGoto::~LinkGoto()
@@ -591,7 +592,7 @@ class LinkMoviePrivate : public LinkPrivate
 	}
 
 	// LinkRendition
-	LinkRendition::LinkRendition( const QRectF &linkArea, ::MediaRendition *rendition, int operation, const QString &script, const Ref &annotationReference )
+	LinkRendition::LinkRendition( const QRectF &linkArea, ::MediaRendition *rendition, int operation, const QString &script, const Ref &annotationReference ) // clazy:exclude=function-args-by-value
 		: Link( *new LinkRenditionPrivate( linkArea, rendition, static_cast<enum ::LinkRendition::RenditionOperation>(operation), script, annotationReference ) )
 	{
 	}
@@ -626,7 +627,7 @@ class LinkMoviePrivate : public LinkPrivate
 	bool LinkRendition::isReferencedAnnotation( const ScreenAnnotation *annotation ) const
 	{
 		Q_D( const LinkRendition );
-		if ( d->annotationReference.num != -1 && d->annotationReference == annotation->d_ptr->pdfObjectReference() )
+		if ( d->annotationReference != Ref::INVALID() && d->annotationReference == annotation->d_ptr->pdfObjectReference() )
 		{
 			return true;
 		}
@@ -658,7 +659,7 @@ class LinkMoviePrivate : public LinkPrivate
 	}
 
 	// LinkMovie
-	LinkMovie::LinkMovie( const QRectF &linkArea, Operation operation, const QString &annotationTitle, const Ref &annotationReference )
+	LinkMovie::LinkMovie( const QRectF &linkArea, Operation operation, const QString &annotationTitle, const Ref &annotationReference ) // clazy:exclude=function-args-by-value
 		: Link( *new LinkMoviePrivate( linkArea, operation, annotationTitle, annotationReference ) )
 	{
 	}
@@ -681,7 +682,7 @@ class LinkMoviePrivate : public LinkPrivate
 	bool LinkMovie::isReferencedAnnotation( const MovieAnnotation *annotation ) const
 	{
 		Q_D( const LinkMovie );
-		if ( d->annotationReference.num != -1 && d->annotationReference == annotation->d_ptr->pdfObjectReference() )
+		if ( d->annotationReference != Ref::INVALID() && d->annotationReference == annotation->d_ptr->pdfObjectReference() )
 		{
 			return true;
 		}

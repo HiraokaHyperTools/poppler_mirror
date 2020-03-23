@@ -1,6 +1,8 @@
 /* Copyright Krzysztof Kowalczyk 2006-2007
    Copyright Hib Eris <hib@hiberis.nl> 2008, 2013
    Copyright 2018 Albert Astals Cid <aacid@kde.org> 2018
+   Copyright 2019 Oliver Sander <oliver.sander@tu-dresden.de>
+   Copyright 2020 Adam Reichold <adam.reichold@t-online.de>
    License: GPLv2 */
 /*
   A tool to stress-test poppler rendering and measure rendering times for
@@ -8,7 +10,7 @@
 
   TODO:
    * make it work with cairo output as well
-   * print more info about document like e.g. enumarate images,
+   * print more info about document like e.g. enumerate images,
      streams, compression, encryption, password-protection. Each should have
      a command-line arguments to turn it on/off
    * never over-write file given as -out argument (optionally, provide -force
@@ -35,14 +37,14 @@
 // Not enabled by default.
 //#define COPY_FILE 1
 
-#include <assert.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <time.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdarg>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
+#include <cerrno>
+#include <ctime>
 
 #ifdef HAVE_DIRENT_H
 #include <dirent.h>
@@ -51,7 +53,6 @@
 #include "Error.h"
 #include "ErrorCodes.h"
 #include "goo/GooString.h"
-#include "goo/GooList.h"
 #include "goo/GooTimer.h"
 #include "GlobalParams.h"
 #include "splash/SplashBitmap.h"
@@ -74,8 +75,8 @@
    They can be no-ops. An implementation for windows is in
    perf-test-preview-win.cc
 */
-extern void PreviewBitmapInit(void);
-extern void PreviewBitmapDestroy(void);
+extern void PreviewBitmapInit();
+extern void PreviewBitmapDestroy();
 extern void PreviewBitmapSplash(SplashBitmap *bmpSplash);
 
 class PdfEnginePoppler {
@@ -86,14 +87,14 @@ public:
     PdfEnginePoppler(const PdfEnginePoppler &) = delete;
     PdfEnginePoppler& operator=(const PdfEnginePoppler &) = delete;
 
-    const char *fileName(void) const { return _fileName; };
+    const char *fileName() const { return _fileName; };
 
     void setFileName(const char *fileName) {
         assert(!_fileName);
         _fileName = (char*)strdup(fileName);
     }
 
-    int pageCount(void) const { return _pageCount; }
+    int pageCount() const { return _pageCount; }
 
     bool load(const char *fileName);
     SplashBitmap *renderBitmap(int pageNo, double zoomReal, int rotation);
@@ -142,12 +143,12 @@ static int  gResolutionX = 0;
 static int  gResolutionY = 0;
 /* If NULL, we output the log info to stdout. If not NULL, should be a name
    of the file to which we output log info.
-   Controled by -out command-line argument. */
+   Controlled by -out command-line argument. */
 static char *   gOutFileName = nullptr;
-/* FILE * correspondig to gOutFileName or stdout if gOutFileName is NULL or
+/* FILE * corresponding to gOutFileName or stdout if gOutFileName is NULL or
    was invalid name */
 static FILE *   gOutFile = nullptr;
-/* FILE * correspondig to gOutFileName or stderr if gOutFileName is NULL or
+/* FILE * corresponding to gOutFileName or stderr if gOutFileName is NULL or
    was invalid name */
 static FILE *   gErrFile = nullptr;
 
@@ -313,7 +314,7 @@ static void sleep_milliseconds(int milliseconds)
     nanosecs = (milliseconds - (secs * 1000)) * 1000;
     tv.tv_sec = (time_t) secs;
     tv.tv_nsec = (long) nanosecs;
-    while (1)
+    while (true)
     {
         int rval = nanosleep(&tv, &tv);
         if (rval == 0)
@@ -374,7 +375,7 @@ static SplashColor splashColBlack;
 
 static SplashColorPtr  gBgColor = SPLASH_COL_WHITE_PTR;
 
-static void splashColorSet(SplashColorPtr col, Guchar red, Guchar green, Guchar blue, Guchar alpha)
+static void splashColorSet(SplashColorPtr col, unsigned char red, unsigned char green, unsigned char blue, unsigned char alpha)
 {
     switch (gSplashColorMode)
     {
@@ -394,7 +395,7 @@ static void splashColorSet(SplashColorPtr col, Guchar red, Guchar green, Guchar 
     }
 }
 
-static void SplashColorsInit(void)
+static void SplashColorsInit()
 {
     splashColorSet(SPLASH_COL_RED_PTR, 0xff, 0, 0, 0);
     splashColorSet(SPLASH_COL_GREEN_PTR, 0, 0xff, 0, 0);
@@ -425,7 +426,7 @@ bool PdfEnginePoppler::load(const char *fileName)
     GooString *fileNameStr = new GooString(fileName);
     if (!fileNameStr) return false;
 
-    _pdfDoc = new PDFDoc(fileNameStr, nullptr, nullptr, (void*)nullptr);
+    _pdfDoc = new PDFDoc(fileNameStr, nullptr, nullptr, nullptr);
     if (!_pdfDoc->isOk()) {
         return false;
     }
@@ -435,8 +436,8 @@ bool PdfEnginePoppler::load(const char *fileName)
 
 SplashOutputDev * PdfEnginePoppler::outputDevice() {
     if (!_outputDev) {
-        GBool bitmapTopDown = gTrue;
-        _outputDev = new SplashOutputDev(gSplashColorMode, 4, gFalse, gBgColor, bitmapTopDown);
+        bool bitmapTopDown = true;
+        _outputDev = new SplashOutputDev(gSplashColorMode, 4, false, gBgColor, bitmapTopDown);
         if (_outputDev)
             _outputDev->startDoc(_pdfDoc);
     }
@@ -450,9 +451,9 @@ SplashBitmap *PdfEnginePoppler::renderBitmap(int pageNo, double zoomReal, int ro
 
     double hDPI = (double)PDF_FILE_DPI * zoomReal * 0.01;
     double vDPI = (double)PDF_FILE_DPI * zoomReal * 0.01;
-    GBool  useMediaBox = gFalse;
-    GBool  crop        = gTrue;
-    GBool  doLinks     = gTrue;
+    bool  useMediaBox = false;
+    bool  crop        = true;
+    bool  doLinks     = true;
     _pdfDoc->displayPage(_outputDev, pageNo, hDPI, vDPI, rotation, useMediaBox, 
         crop, doLinks, nullptr, nullptr);
 
@@ -739,7 +740,7 @@ static void StrList_Destroy(StrList **root)
     *root = nullptr;
 }
 
-static void my_error(void *, ErrorCategory, Goffset pos, char *msg) {
+static void my_error(ErrorCategory, Goffset pos, const char *msg) {
 #if 0
     char        buf[4096], *p = buf;
 
@@ -818,7 +819,7 @@ static void PrintUsageAndExit(int argc, char **argv)
     exit(0);
 }
 
-static bool ShowPreview(void)
+static bool ShowPreview()
 {
     if (gfPreview || gfSlowPreview)
         return true;
@@ -839,7 +840,7 @@ static void RenderPdfAsText(const char *fileName)
 
     LogInfo("started: %s\n", fileName);
 
-    TextOutputDev * textOut = new TextOutputDev(nullptr, gTrue, 0, gFalse, gFalse);
+    TextOutputDev * textOut = new TextOutputDev(nullptr, true, 0, false, false);
     if (!textOut->isOk()) {
         delete textOut;
         return;
@@ -870,16 +871,16 @@ static void RenderPdfAsText(const char *fileName)
 
         msTimer.start();
         int rotate = 0;
-        GBool useMediaBox = gFalse;
-        GBool crop = gTrue;
-        GBool doLinks = gFalse;
+        bool useMediaBox = false;
+        bool crop = true;
+        bool doLinks = false;
         pdfDoc->displayPage(textOut, curPage, 72, 72, rotate, useMediaBox, crop, doLinks);
         txt = textOut->getText(0.0, 0.0, 10000.0, 10000.0);
         msTimer.stop();
         timeInMs = msTimer.getElapsed();
         if (gfTimings)
             LogInfo("page %d: %.2f ms\n", curPage, timeInMs);
-        printf("%s\n", txt->getCString());
+        printf("%s\n", txt->c_str());
         delete txt;
         txt = nullptr;
     }
@@ -934,10 +935,10 @@ static void RenderPdf(const char *fileName)
 
         SplashBitmap *bmpSplash = nullptr;
 
-        GooTimer msTimer;
+        GooTimer msRenderTimer;
         bmpSplash = engineSplash->renderBitmap(curPage, 100.0, 0);
-        msTimer.stop();
-        double timeInMs = msTimer.getElapsed();
+        msRenderTimer.stop();
+        timeInMs = msRenderTimer.getElapsed();
         if (gfTimings) {
             if (!bmpSplash)
                 LogInfo("page splash %d: failed to render\n", curPage);
@@ -1230,17 +1231,17 @@ static void RenderCmdLineArg(char *cmdLineArg)
 
 int main(int argc, char **argv)
 {
-    setErrorCallback(my_error, nullptr);
+    setErrorCallback(my_error);
     ParseCommandLine(argc, argv);
     if (0 == StrList_Len(&gArgsListRoot))
         PrintUsageAndExit(argc, argv);
     assert(gArgsListRoot);
 
     SplashColorsInit();
-    globalParams = new GlobalParams();
+    globalParams = std::make_unique<GlobalParams>();
     if (!globalParams)
         return 1;
-    globalParams->setErrQuiet(gFalse);
+    globalParams->setErrQuiet(false);
 
     FILE * outFile = nullptr;
     if (gOutFileName) {
@@ -1270,7 +1271,6 @@ int main(int argc, char **argv)
         fclose(outFile);
     PreviewBitmapDestroy();
     StrList_Destroy(&gArgsListRoot);
-    delete globalParams;
     free(gOutFileName);
     return 0;
 }

@@ -3,7 +3,7 @@
 // FontInfo.cc
 //
 // Copyright (C) 2005, 2006 Kristian Høgsberg <krh@redhat.com>
-// Copyright (C) 2005-2008, 2010, 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005-2008, 2010, 2017-2019 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2005 Brad Hards <bradh@frogmouth.net>
 // Copyright (C) 2006 Kouhei Sutou <kou@cozmixng.org>
 // Copyright (C) 2009 Pino Toscano <pino@kde.org>
@@ -13,6 +13,8 @@
 // Copyright (C) 2011 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
+// Copyright (C) 2018, 2019 Adam Reichold <adam.reichold@t-online.de>
+// Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -28,11 +30,11 @@
 //========================================================================
 
 #include "config.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <string.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstddef>
+#include <cstring>
+#include <cmath>
 #include "GlobalParams.h"
 #include "Error.h"
 #include "Object.h"
@@ -50,63 +52,61 @@ FontInfoScanner::FontInfoScanner(PDFDoc *docA, int firstPage) {
 FontInfoScanner::~FontInfoScanner() {
 }
 
-GooList *FontInfoScanner::scan(int nPages) {
-  GooList *result;
+std::vector<FontInfo*> FontInfoScanner::scan(int nPages) {
   Page *page;
   Dict *resDict;
   Annots *annots;
   int lastPage;
 
+  std::vector<FontInfo*> result;
+
   if (currentPage > doc->getNumPages()) {
-    return nullptr;
+    return result;
   }
- 
-  result = new GooList();
 
   lastPage = currentPage + nPages;
   if (lastPage > doc->getNumPages() + 1) {
     lastPage = doc->getNumPages() + 1;
   }
 
-  XRef *xrefA = doc->getXRef()->copy();
+  std::unique_ptr<XRef> xrefA(doc->getXRef()->copy());
   for (int pg = currentPage; pg < lastPage; ++pg) {
     page = doc->getPage(pg);
     if (!page) continue;
 
-    if ((resDict = page->getResourceDictCopy(xrefA))) {
-      scanFonts(xrefA, resDict, result);
+    if ((resDict = page->getResourceDictCopy(xrefA.get()))) {
+      scanFonts(xrefA.get(), resDict, &result);
       delete resDict;
     }
     annots = page->getAnnots();
     for (int i = 0; i < annots->getNumAnnots(); ++i) {
       Object obj1 = annots->getAnnot(i)->getAppearanceResDict();
       if (obj1.isDict()) {
-        scanFonts(xrefA, obj1.getDict(), result);
+        scanFonts(xrefA.get(), obj1.getDict(), &result);
       }
     }
   }
 
   currentPage = lastPage;
 
-  delete xrefA;
   return result;
 }
 
-void FontInfoScanner::scanFonts(XRef *xrefA, Dict *resDict, GooList *fontsList) {
+void FontInfoScanner::scanFonts(XRef *xrefA, Dict *resDict, std::vector<FontInfo*> *fontsList) {
   GfxFontDict *gfxFontDict;
   GfxFont *font;
 
   // scan the fonts in this resource dictionary
   gfxFontDict = nullptr;
-  Object obj1 = resDict->lookupNF("Font");
-  if (obj1.isRef()) {
-    Object obj2 = obj1.fetch(xrefA);
+  const Object &fontObj = resDict->lookupNF("Font");
+  if (fontObj.isRef()) {
+    Object obj2 = fontObj.fetch(xrefA);
     if (obj2.isDict()) {
-      Ref r = obj1.getRef();
+      Ref r = fontObj.getRef();
       gfxFontDict = new GfxFontDict(xrefA, &r, obj2.getDict());
     }
-  } else if (obj1.isDict()) {
-    gfxFontDict = new GfxFontDict(xrefA, nullptr, obj1.getDict());
+  } else if (fontObj.isDict()) {
+    gfxFontDict = new GfxFontDict(xrefA, nullptr, fontObj.getDict());
   }
   if (gfxFontDict) {
     for (int i = 0; i < gfxFontDict->getNumFonts(); ++i) {
@@ -114,9 +114,8 @@ void FontInfoScanner::scanFonts(XRef *xrefA, Dict *resDict, GooList *fontsList) 
         Ref fontRef = *font->getID();
 
         // add this font to the list if not already found
-        if (fonts.find(fontRef.num) == fonts.end()) {
-          fontsList->append(new FontInfo(font, xrefA));
-          fonts.insert(fontRef.num);
+	if (fonts.insert(fontRef.num).second) {
+	  fontsList->push_back(new FontInfo(font, xrefA));
         }
       }
     }
@@ -126,24 +125,29 @@ void FontInfoScanner::scanFonts(XRef *xrefA, Dict *resDict, GooList *fontsList) 
   // recursively scan any resource dictionaries in objects in this
   // resource dictionary
   const char *resTypes[] = { "XObject", "Pattern" };
-  for (Guint resType = 0; resType < sizeof(resTypes) / sizeof(resTypes[0]); ++resType) {
-    Object objDict = resDict->lookup(resTypes[resType]);
+  for (const char *resType : resTypes) {
+    Object objDict = resDict->lookup(resType);
     if (objDict.isDict()) {
       for (int i = 0; i < objDict.dictGetLength(); ++i) {
-        obj1 = objDict.dictGetValNF(i);
-        if (obj1.isRef()) {
+        Ref obj2Ref;
+        const Object obj2 = objDict.getDict()->getVal(i, &obj2Ref);
+        if (obj2Ref != Ref::INVALID()) {
           // check for an already-seen object
-          const Ref r = obj1.getRef();
-          if (visitedObjects.find(r.num) != visitedObjects.end()) {
+	  if (!visitedObjects.insert(obj2Ref.num).second) {
             continue;
-          }
-
-          visitedObjects.insert(r.num);
+	  }
         }
 
-        Object obj2 = obj1.fetch(xrefA);
         if (obj2.isStream()) {
-          Object resObj = obj2.streamGetDict()->lookup("Resources");
+          Ref resourcesRef;
+          const Object resObj = obj2.streamGetDict()->lookup("Resources", &resourcesRef);
+
+          if (resourcesRef != Ref::INVALID()) {
+	    if (!visitedObjects.insert(resourcesRef.num).second) {
+              continue;
+	    }
+          }
+
           if (resObj.isDict() && resObj.getDict() != resDict) {
             scanFonts(xrefA, resObj.getDict(), fontsList);
           }
@@ -171,7 +175,7 @@ FontInfo::FontInfo(GfxFont *font, XRef *xref) {
 
   // check for an embedded font
   if (font->getType() == fontType3) {
-    emb = gTrue;
+    emb = true;
   } else {
     emb = font->getEmbeddedFontID(&embRef);
   }
@@ -190,15 +194,15 @@ FontInfo::FontInfo(GfxFont *font, XRef *xref) {
   encoding = font->getEncodingName()->copy();
 
   // look for a ToUnicode map
-  hasToUnicode = gFalse;
-  Object fontObj = xref->fetch(fontRef.num, fontRef.gen);
+  hasToUnicode = false;
+  Object fontObj = xref->fetch(fontRef);
   if (fontObj.isDict()) {
     hasToUnicode = fontObj.dictLookup("ToUnicode").isStream();
   }
 
   // check for a font subset name: capital letters followed by a '+'
   // sign
-  subset = gFalse;
+  subset = false;
   if (name) {
     int i;
     for (i = 0; i < name->getLength(); ++i) {
@@ -210,7 +214,7 @@ FontInfo::FontInfo(GfxFont *font, XRef *xref) {
   }
 }
 
-FontInfo::FontInfo(FontInfo& f) {
+FontInfo::FontInfo(const FontInfo& f) {
   name = f.name ? f.name->copy() : nullptr;
   file = f.file ? f.file->copy() : nullptr;
   encoding = f.encoding ? f.encoding->copy() : nullptr;

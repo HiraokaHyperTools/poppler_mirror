@@ -19,8 +19,9 @@
 
 #include "config.h"
 
-#include <errno.h>
-#include <glib/gstdio.h>
+#include <cerrno>
+
+#include <goo/gfile.h>
 
 #include "poppler-media.h"
 #include "poppler-private.h"
@@ -98,9 +99,9 @@ _poppler_media_new (const MediaRendition *poppler_media)
     media->stream = poppler_media->getEmbbededStreamObject()->copy();
     mime_type = poppler_media->getContentType();
     if (mime_type)
-      media->mime_type = g_strdup (mime_type->getCString());
+      media->mime_type = g_strdup (mime_type->c_str());
   } else {
-    media->filename = g_strdup (poppler_media->getFileName()->getCString());
+    media->filename = g_strdup (poppler_media->getFileName()->c_str());
   }
 
   return media;
@@ -214,7 +215,7 @@ poppler_media_save (PopplerMedia *poppler_media,
   g_return_val_if_fail (POPPLER_IS_MEDIA (poppler_media), FALSE);
   g_return_val_if_fail (poppler_media->stream.isStream(), FALSE);
 
-  f = g_fopen (filename, "wb");
+  f = openFile (filename, "wb");
 
   if (f == nullptr)
     {

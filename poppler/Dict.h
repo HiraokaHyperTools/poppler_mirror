@@ -16,7 +16,7 @@
 // Copyright (C) 2005 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2006 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2007-2008 Julien Rebetez <julienr@svn.gnome.org>
-// Copyright (C) 2010, 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2010, 2017-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010 Paweł Wiejacha <pawel.wiejacha@gmail.com>
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
@@ -30,18 +30,14 @@
 #ifndef DICT_H
 #define DICT_H
 
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
-
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <utility>
 
 #include "poppler-config.h"
 #include "Object.h"
-#include "goo/GooMutex.h"
 
 //------------------------------------------------------------------------
 // Dict
@@ -54,9 +50,6 @@ public:
   Dict(XRef *xrefA);
   Dict(const Dict *dictA);
   Dict *copy(XRef *xrefA) const;
-
-  // Destructor.
-  ~Dict();
 
   Dict(const Dict &) = delete;
   Dict& operator=(const Dict &) = delete;
@@ -78,18 +71,25 @@ public:
   void remove(const char *key);
 
   // Check if dictionary is of specified type.
-  GBool is(const char *type) const;
+  bool is(const char *type) const;
 
   // Look up an entry and return the value.  Returns a null object
   // if <key> is not in the dictionary.
   Object lookup(const char *key, int recursion = 0) const;
-  Object lookupNF(const char *key) const;
-  GBool lookupInt(const char *key, const char *alt_key, int *value) const;
+  // Same as above but if the returned object is a fetched Ref returns such Ref in returnRef, otherwise returnRef is Ref::INVALID()
+  Object lookup(const char *key, Ref *returnRef, int recursion = 0) const;
+  // Look up an entry and return the value.  Returns a null object
+  // if <key> is not in the dictionary or if it is a ref to a non encrypted object in a partially encrypted document
+  Object lookupEnsureEncryptedIfNeeded(const char *key) const;
+  const Object &lookupNF(const char *key) const;
+  bool lookupInt(const char *key, const char *alt_key, int *value) const;
 
   // Iterative accessors.
   const char *getKey(int i) const { return entries[i].first.c_str(); }
   Object getVal(int i) const { return entries[i].second.fetch(xref); }
-  Object getValNF(int i) const { return entries[i].second.copy(); }
+  // Same as above but if the returned object is a fetched Ref returns such Ref in returnRef, otherwise returnRef is Ref::INVALID()
+  Object getVal(int i, Ref *returnRef) const;
+  const Object &getValNF(int i) const { return entries[i].second; }
 
   // Set the xref pointer.  This is only used in one special case: the
   // trailer dictionary, which is read before the xref table is
@@ -98,7 +98,7 @@ public:
   
   XRef *getXRef() const { return xref; }
   
-  GBool hasKey(const char *key) const;
+  bool hasKey(const char *key) const;
 
 private:
   friend class Object; // for incRef/decRef
@@ -110,13 +110,11 @@ private:
   using DictEntry = std::pair<std::string, Object>;
   struct CmpDictEntry;
 
-  bool sorted;
+  std::atomic_bool sorted;
   XRef *xref;			// the xref table for this PDF file
   std::vector<DictEntry> entries;
   std::atomic_int ref;			// reference count
-#ifdef MULTITHREADED
-  mutable GooMutex mutex;
-#endif
+  mutable std::recursive_mutex mutex;
 
   const DictEntry *find(const char *key) const;
   DictEntry *find(const char *key);

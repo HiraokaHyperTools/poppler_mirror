@@ -5,11 +5,16 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2019 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
 //
 //========================================================================
+
+#ifndef WIN32CONSOLE_H
+#define WIN32CONSOLE_H
 
 // UTF-8 Support for win32 console
 //
@@ -21,7 +26,7 @@
 // Ensure stdio.h is included before redefining stdio functions. We need to provide
 // our own declarations for the redefined functions because win32 stdio.h functions
 // have DLL export decorations.
-#include <stdio.h>
+#include <cstdio>
 
 #ifndef WIN32_CONSOLE_IMPL // don't redefine in Win32Console.cc so we can call original functions
 #define printf(...)  win32_fprintf(stdout, __VA_ARGS__)
@@ -61,3 +66,5 @@ public:
 };
 
 #endif // _WIN32
+
+#endif

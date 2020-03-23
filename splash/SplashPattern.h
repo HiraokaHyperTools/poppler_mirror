@@ -12,7 +12,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2010, 2011, 2014 Thomas Freitag <Thomas.Freitag@alfa.de>
-// Copyright (C) 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2020 Albert Astals Cid <aacid@kde.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -21,10 +21,6 @@
 
 #ifndef SPLASHPATTERN_H
 #define SPLASHPATTERN_H
-
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
 
 #include "SplashTypes.h"
 
@@ -47,17 +43,17 @@ public:
   SplashPattern& operator=(const SplashPattern &) = delete;
 
   // Return the color value for a specific pixel.
-  virtual GBool getColor(int x, int y, SplashColorPtr c) = 0;
+  virtual bool getColor(int x, int y, SplashColorPtr c) = 0;
 
   // Test if x,y-position is inside pattern.
-  virtual GBool testPosition(int x, int y) = 0;
+  virtual bool testPosition(int x, int y) = 0;
 
   // Returns true if this pattern object will return the same color
   // value for all pixels.
-  virtual GBool isStatic() = 0;
+  virtual bool isStatic() = 0;
 
   // Returns true if this pattern colorspace is CMYK.
-  virtual GBool isCMYK() = 0;
+  virtual bool isCMYK() = 0;
 private:
 };
 
@@ -72,15 +68,15 @@ public:
 
   SplashPattern *copy() override { return new SplashSolidColor(color); }
 
-  ~SplashSolidColor();
+  ~SplashSolidColor() override;
 
-  GBool getColor(int x, int y, SplashColorPtr c) override;
+  bool getColor(int x, int y, SplashColorPtr c) override;
 
-  GBool testPosition(int x, int y) override { return gFalse; }
+  bool testPosition(int x, int y) override { return false; }
 
-  GBool isStatic() override { return gTrue; }
+  bool isStatic() override { return true; }
 
-  GBool isCMYK() override { return gFalse; }
+  bool isCMYK() override { return false; }
 
 private:
 
@@ -94,13 +90,18 @@ private:
 class SplashGouraudColor: public SplashPattern {
 public:
 
-  virtual GBool isParameterized() = 0;
+  virtual bool isParameterized() = 0;
 
   virtual int getNTriangles() = 0;
 
-  virtual  void getTriangle(int i, double *x0, double *y0, double *color0,
+  virtual void getParametrizedTriangle(int i, double *x0, double *y0, double *color0,
                             double *x1, double *y1, double *color1,
                             double *x2, double *y2, double *color2) = 0;
+
+  virtual void getNonParametrizedTriangle(int i, SplashColorMode mode,
+                            double *x0, double *y0, SplashColorPtr color0,
+                            double *x1, double *y1, SplashColorPtr color1,
+                            double *x2, double *y2, SplashColorPtr color2) = 0;
 
   virtual void getParameterizedColor(double t, SplashColorMode mode, SplashColorPtr c) = 0;
 };

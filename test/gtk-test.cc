@@ -1,9 +1,5 @@
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
 #include <goo/gmem.h>
 #include <splash/SplashTypes.h>
 #include <splash/SplashBitmap.h>
@@ -19,16 +15,16 @@
 #include <poppler.h>
 #include <poppler-private.h>
 #include <gtk/gtk.h>
-#include <math.h>
+#include <cmath>
 
-static int page = 0;
+static int requested_page = 0;
 static gboolean cairo_output = FALSE;
 static gboolean splash_output = FALSE;
 static const char **file_arguments = nullptr;
 static const GOptionEntry options[] = {
   { "cairo", 'c', 0, G_OPTION_ARG_NONE, &cairo_output, "Cairo Output Device", nullptr},
   { "splash", 's', 0, G_OPTION_ARG_NONE, &splash_output, "Splash Output Device", nullptr},
-  { "page", 'p', 0, G_OPTION_ARG_INT, &page, "Page number", "PAGE" },
+  { "page", 'p', 0, G_OPTION_ARG_INT, &requested_page, "Page number", "PAGE" },
   { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &file_arguments, nullptr, "PDF-FILES…" },
   { }
 };
@@ -50,7 +46,7 @@ public:
                      void (*redrawCbkA)(void *data),
                      void *redrawCbkDataA, SplashColor sc);
   
-  virtual ~GDKSplashOutputDev();
+  ~GDKSplashOutputDev() override;
 
   //----- initialization and control
 
@@ -104,7 +100,7 @@ typedef struct
 GDKSplashOutputDev::GDKSplashOutputDev(GdkScreen *screen,
                                        void (*redrawCbkA)(void *data),
                                        void *redrawCbkDataA, SplashColor sc):
-  SplashOutputDev(splashModeRGB8, 4, gFalse, sc),
+  SplashOutputDev(splashModeRGB8, 4, false, sc),
   incrementalUpdate (1)
 {
   redrawCbk = redrawCbkA;
@@ -222,7 +218,7 @@ view_set_page (View *view, int page)
     cairo_destroy (cr);
     g_object_unref (poppler_page);
   } else {
-    view->doc->doc->displayPage (view->out, page + 1, 72, 72, 0, gFalse, gTrue, gTrue);
+    view->doc->doc->displayPage (view->out, page + 1, 72, 72, 0, false, true, true);
     w = view->out->getBitmapWidth();
     h = view->out->getBitmapHeight();
   }
@@ -373,7 +369,7 @@ main (int argc, char *argv [])
 
   gtk_init (&argc, &argv);
 
-  globalParams = new GlobalParams();
+  globalParams = std::make_unique<GlobalParams>();
 
   for (int i = 0; file_arguments[i]; i++) {
     View            *view;
@@ -398,12 +394,10 @@ main (int argc, char *argv [])
 
     view = view_new (doc);
     view_list = g_list_prepend (view_list, view);
-    view_set_page (view, CLAMP (page, 0, poppler_document_get_n_pages (doc) - 1));
+    view_set_page (view, CLAMP (requested_page, 0, poppler_document_get_n_pages (doc) - 1));
   }
 
   gtk_main ();
-
-  delete globalParams;
 
   return 0;
 }

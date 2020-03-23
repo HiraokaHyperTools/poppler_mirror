@@ -1,18 +1,20 @@
 /* poppler-document.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
  * Copyright (C) 2005, 2008, Brad Hards <bradh@frogmouth.net>
- * Copyright (C) 2005-2010, 2012, 2013, 2015, 2017, 2018, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2005-2010, 2012, 2013, 2015, 2017-2020, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2006-2010, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010, 2011 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2012 Koji Otani <sho@bbr.jp>
  * Copyright (C) 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
  * Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
- * Copyright (C) 2014 Adam Reichold <adamreichold@myopera.com>
+ * Copyright (C) 2014, 2018, 2020 Adam Reichold <adam.reichold@t-online.de>
  * Copyright (C) 2015 William Bader <williambader@hotmail.com>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
  * Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2017 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
+ * Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2019 Alexander Volkov <a.volkov@rusbitech.ru>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +50,7 @@
 
 #include "poppler-private.h"
 #include "poppler-page-private.h"
+#include "poppler-outline-private.h"
 
 #if defined(USE_CMS)
 #include <lcms2.h>
@@ -55,12 +58,19 @@
 
 namespace Poppler {
 
-  int DocumentData::count = 0;
-
   Document *Document::load(const QString &filePath, const QByteArray &ownerPassword,
 			   const QByteArray &userPassword)
     {
 	DocumentData *doc = new DocumentData(filePath, 
+					     new GooString(ownerPassword.data()),
+					     new GooString(userPassword.data()));
+	return DocumentData::checkDocument(doc);
+    }
+
+	Document *Document::load(QIODevice *device, const QByteArray &ownerPassword,
+			   const QByteArray &userPassword)
+    {
+	DocumentData *doc = new DocumentData(device,
 					     new GooString(ownerPassword.data()),
 					     new GooString(userPassword.data()));
 	return DocumentData::checkDocument(doc);
@@ -133,6 +143,12 @@ namespace Poppler {
 	    if (!m_doc->fileContents.isEmpty())
 	    {
 		doc2 = new DocumentData(m_doc->fileContents,
+					new GooString(ownerPassword.data()),
+					new GooString(userPassword.data()));
+	    }
+	    else if (m_doc->m_device)
+	    {
+		doc2 = new DocumentData(m_doc->m_device,
 					new GooString(ownerPassword.data()),
 					new GooString(userPassword.data()));
 	    }
@@ -244,7 +260,7 @@ namespace Poppler {
 	{
 		XRef *xref = m_doc->doc->getXRef()->copy();
 
-		Object refObj(fi.m_data->embRef.num, fi.m_data->embRef.gen);
+		Object refObj(fi.m_data->embRef);
 		Object strObj = refObj.fetch(xref);
 		if (strObj.isStream())
 		{
@@ -567,8 +583,12 @@ namespace Poppler {
 	GooString label_g(label.toLatin1().data());
 	int index;
 
-	if (!m_doc->doc->getCatalog()->labelToIndex (&label_g, &index))
-	    return nullptr;
+	if (!m_doc->doc->getCatalog()->labelToIndex (&label_g, &index)) {
+	    std::unique_ptr<GooString> label_ug(QStringToUnicodeGooString(label));
+	    if (!m_doc->doc->getCatalog()->labelToIndex (label_ug.get(), &index)) {
+	        return nullptr;
+	    }
+	}
 
 	return page(index);
     }
@@ -584,15 +604,30 @@ namespace Poppler {
         if ( !outline )
             return nullptr;
 
-        const GooList * items = outline->getItems();
-        if ( !items || items->getLength() < 1 )
+        const std::vector<::OutlineItem*> * items = outline->getItems();
+        if ( !items || items->size() < 1 )
             return nullptr;
 
         QDomDocument *toc = new QDomDocument();
-        if ( items->getLength() > 0 )
+        if ( items->size() > 0 )
            m_doc->addTocChildren( toc, toc, items );
 
         return toc;
+    }
+
+    QVector<OutlineItem> Document::outline() const
+    {
+      QVector<OutlineItem> result;
+
+      if (::Outline *outline = m_doc->doc->getOutline()) {
+	if (const std::vector<::OutlineItem*> *items = outline->getItems()) {
+	  for (void *item : *items) {
+	    result.push_back(OutlineItem{new OutlineItemData{static_cast<::OutlineItem *>(item), m_doc}});
+	  }
+	}
+      }
+
+      return result;
     }
 
     LinkDestination *Document::linkDestination( const QString &name )
@@ -634,7 +669,7 @@ namespace Poppler {
 #if defined(USE_CMS)
         return (void*)GfxColorSpace::getRGBProfile();
 #else
-        return NULL;
+        return nullptr;
 #endif
     }
 
@@ -643,7 +678,7 @@ namespace Poppler {
 #if defined(USE_CMS)
        return (void*)GfxColorSpace::getDisplayProfile();
 #else
-       return NULL;
+       return nullptr;
 #endif
     }
 
@@ -756,9 +791,9 @@ namespace Poppler {
             return false;
 
         if (permanentId)
-            *permanentId = gooPermanentId.getCString();
+            *permanentId = gooPermanentId.c_str();
         if (updateId)
-            *updateId = gooUpdateId.getCString();
+            *updateId = gooUpdateId.c_str();
 
         return true;
     }
@@ -784,8 +819,8 @@ namespace Poppler {
 
         Form *form = m_doc->doc->getCatalog()->getForm();
         const std::vector<Ref> &calculateOrder = form->getCalculateOrder();
-        for (uint i = 0; i < calculateOrder.size(); ++i) {
-            FormWidget *w = form->findWidgetByRef(calculateOrder[i]);
+        for (Ref r : calculateOrder) {
+            FormWidget *w = form->findWidgetByRef(r);
             if (w) {
                 result << w->getID();
             }
@@ -841,11 +876,7 @@ namespace Poppler {
     }
 
     bool isOverprintPreviewAvailable() {
-#ifdef SPLASH_CMYK
         return true;
-#else
-        return false;
-#endif
    }
 
 }

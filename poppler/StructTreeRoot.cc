@@ -7,15 +7,11 @@
 // Copyright 2013, 2014 Igalia S.L.
 // Copyright 2014 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright 2017 Jan-Erik S <janerik234678@gmail.com>
-// Copyright 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright 2017-2019 Albert Astals Cid <aacid@kde.org>
 // Copyright 2017, 2018 Adrian Johnson <ajohnson@redneon.com>
 // Copyright 2018, Adam Reichold <adam.reichold@t-online.de>
 //
 //========================================================================
-
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
 
 #include "goo/GooString.h"
 #include "StructTreeRoot.h"
@@ -24,7 +20,7 @@
 #include "Object.h"
 #include "Dict.h"
 #include <set>
-#include <assert.h>
+#include <cassert>
 
 
 StructTreeRoot::StructTreeRoot(PDFDoc *docA, Dict *structTreeRootDict):
@@ -37,8 +33,8 @@ StructTreeRoot::StructTreeRoot(PDFDoc *docA, Dict *structTreeRootDict):
 
 StructTreeRoot::~StructTreeRoot()
 {
-  for (ElemPtrArray::iterator i = elements.begin(); i != elements.end(); ++i)
-    delete *i;
+  for (StructElement *element : elements)
+    delete element;
 }
 
 void StructTreeRoot::parse(Dict *root)
@@ -51,7 +47,7 @@ void StructTreeRoot::parse(Dict *root)
 
   // ParentTree (optional). If present, it must be a number tree,
   // otherwise it is not possible to map stream objects to their
-  // corresponsing structure element. Here only the references are
+  // corresponding structure element. Here only the references are
   // loaded into the array, the pointers to the StructElements will
   // be filled-in later when parsing them.
   const Object parentTreeObj = root->lookup("ParentTree");
@@ -62,14 +58,14 @@ void StructTreeRoot::parse(Dict *root)
   std::set<int> seenElements;
 
   // Parse the children StructElements
-  const GBool marked = doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked;
+  const bool marked = doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked;
   Object kids = root->lookup("K");
   if (kids.isArray()) {
     if (marked && kids.arrayGetLength() > 1) {
       error(errSyntaxWarning, -1, "K in StructTreeRoot has more than one children in a tagged PDF");
     }
     for (int i = 0; i < kids.arrayGetLength(); i++) {
-      Object ref = kids.arrayGetNF(i);
+      const Object &ref = kids.arrayGetNF(i);
       if (ref.isRef()) {
         seenElements.insert(ref.getRefNum());
       }
@@ -99,7 +95,7 @@ void StructTreeRoot::parse(Dict *root)
     StructElement *child = new StructElement(kids.getDict(), this, nullptr, seenElements);
     if (child->isOk()) {
       appendChild(child);
-      Object ref = root->lookupNF("K");
+      const Object &ref = root->lookupNF("K");
       if (ref.isRef())
         parentTreeAdd(ref.getRef(), child);
     } else {
@@ -145,11 +141,11 @@ void StructTreeRoot::parseNumberTreeNode(Dict *node)
 	int keyVal = key.getInt();
 	std::vector<Parent>& vec = parentTree[keyVal];
 
-	Object value = nums.arrayGet(i + 1);
-	if (value.isArray()) {
-	  vec.resize(value.arrayGetLength());
-	  for (int j = 0; j < value.arrayGetLength(); j++) {
-	    Object itemvalue = value.arrayGetNF(j);
+	Object valueArray = nums.arrayGet(i + 1);
+	if (valueArray.isArray()) {
+	  vec.resize(valueArray.arrayGetLength());
+	  for (int j = 0; j < valueArray.arrayGetLength(); j++) {
+	    const Object &itemvalue = valueArray.arrayGetNF(j);
 	    if (itemvalue.isRef()) {
 	      Ref ref = itemvalue.getRef();
 	      vec[j].ref = ref;
@@ -159,14 +155,14 @@ void StructTreeRoot::parseNumberTreeNode(Dict *node)
 	    }
 	  }
 	} else {
-	  value = nums.arrayGetNF(i + 1);
-	  if (value.isRef()) {
-	    Ref ref = value.getRef();
+	  const Object &valueRef = nums.arrayGetNF(i + 1);
+	  if (valueRef.isRef()) {
+	    Ref ref = valueRef.getRef();
 	    vec.resize(1);
 	    vec[0].ref = ref;
 	    refToParentMap.insert(std::pair<Ref, Parent*>(ref, &vec[0]));
 	  } else {
-	    error(errSyntaxError, -1, "Nums item at position {0:d} is wrong type ({1:s})", i + 1, value.getTypeName());
+	    error(errSyntaxError, -1, "Nums item at position {0:d} is wrong type ({1:s})", i + 1, valueRef.getTypeName());
 	  }
 	}
       }
@@ -179,7 +175,7 @@ void StructTreeRoot::parseNumberTreeNode(Dict *node)
 }
 
 
-void StructTreeRoot::parentTreeAdd(const Ref &objectRef, StructElement *element)
+void StructTreeRoot::parentTreeAdd(const Ref objectRef, StructElement *element)
 {
   auto range = refToParentMap.equal_range(objectRef);
   for (auto it = range.first; it !=range.second; ++it)

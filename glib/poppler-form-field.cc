@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2007 Carlos Garcia Campos <carlosgc@gnome.org>
  * Copyright (C) 2006 Julien Rebetez
+ * Copyright (C) 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,13 +19,15 @@
  * Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+#include <memory>
+
 #include "poppler.h"
 #include "poppler-private.h"
 
 /**
  * SECTION:poppler-form-field
  * @short_description: Form Field
- * @title: PoppplerFormField
+ * @title: PopplerFormField
  */
 
 typedef struct _PopplerFormFieldClass PopplerFormFieldClass;
@@ -196,6 +199,62 @@ poppler_form_field_get_action (PopplerFormField *field)
   return field->action;
 }
 
+/**
+ * poppler_form_field_get_additional_action:
+ * @field: a #PopplerFormField
+ * @type: the type of additional action
+ *
+ * Retrieves the action (#PopplerAction) that shall be performed when
+ * an additional action is triggered on @field, or %NULL.
+ *
+ * Return value: (transfer none): the action to perform. The returned
+ *               object is owned by @field and should not be freed.
+ *
+ *
+ * Since: 0.72
+ */
+PopplerAction *
+poppler_form_field_get_additional_action (PopplerFormField           *field,
+					  PopplerAdditionalActionType type)
+{
+  Annot::FormAdditionalActionsType form_action;
+  PopplerAction **action;
+
+  switch (type)
+  {
+    case POPPLER_ADDITIONAL_ACTION_FIELD_MODIFIED:
+      form_action = Annot::actionFieldModified;
+      action = &field->field_modified_action;
+      break;
+    case POPPLER_ADDITIONAL_ACTION_FORMAT_FIELD:
+      form_action = Annot::actionFormatField;
+      action = &field->format_field_action;
+      break;
+    case POPPLER_ADDITIONAL_ACTION_VALIDATE_FIELD:
+      form_action = Annot::actionValidateField;
+      action = &field->validate_field_action;
+      break;
+    case POPPLER_ADDITIONAL_ACTION_CALCULATE_FIELD:
+      form_action = Annot::actionCalculateField;
+      action = &field->calculate_field_action;
+      break;
+    default:
+      g_return_val_if_reached (nullptr);
+      return nullptr;
+  }
+
+  if (*action)
+    return *action;
+
+  std::unique_ptr<LinkAction> link_action = field->widget->getAdditionalAction (form_action);
+  if (!link_action)
+    return nullptr;
+
+  *action = _poppler_action_new (nullptr, link_action.get(), nullptr);
+
+  return *action;
+}
+
 /* Button Field */
 /**
  * poppler_form_field_button_get_button_type:
@@ -254,7 +313,7 @@ poppler_form_field_button_set_state (PopplerFormField *field,
 {
   g_return_if_fail (field->widget->getType () == formButton);
 
-  static_cast<FormWidgetButton*>(field->widget)->setState ((GBool)state);
+  static_cast<FormWidgetButton*>(field->widget)->setState ((bool)state);
 }
 
 /**

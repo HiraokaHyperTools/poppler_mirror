@@ -25,7 +25,7 @@
 #include <StructElement.h>
 #include <GlobalParams.h>
 #include <UnicodeMap.h>
-#include <math.h>
+#include <cmath>
 #endif /* !__GI_SCANNER__ */
 
 #include "poppler.h"
@@ -53,7 +53,7 @@ typedef struct _PopplerStructureElementClass
 G_DEFINE_TYPE (PopplerStructureElement, poppler_structure_element, G_TYPE_OBJECT)
 
 static PopplerStructureElement *
-_poppler_structure_element_new (PopplerDocument *document, StructElement *element)
+_poppler_structure_element_new (PopplerDocument *document, const StructElement *element)
 {
   PopplerStructureElement *poppler_structure_element;
 
@@ -400,7 +400,7 @@ static EnumType
 attr_to_enum (PopplerStructureElement *poppler_structure_element)
 {
   const Attribute *attr =
-      poppler_structure_element->elem->findAttribute (EnumNameValue<EnumType>::attribute_type, gTrue);
+      poppler_structure_element->elem->findAttribute (EnumNameValue<EnumType>::attribute_type, true);
   return name_to_enum<EnumType> ((attr != nullptr)
                                  ? attr->getValue ()
                                  : Attribute::getDefaultValue (EnumNameValue<EnumType>::attribute_type));
@@ -412,7 +412,7 @@ attr_value_or_default (PopplerStructureElement *poppler_structure_element,
                        Attribute::Type          attribute_type)
 {
   const Attribute *attr =
-      poppler_structure_element->elem->findAttribute (attribute_type, gTrue);
+      poppler_structure_element->elem->findAttribute (attribute_type, true);
   return attr ? attr->getValue () : Attribute::getDefaultValue (attribute_type);
 }
 
@@ -437,7 +437,7 @@ poppler_structure_element_get_page (PopplerStructureElement *poppler_structure_e
   Ref ref;
   if (poppler_structure_element->elem->getPageRef (ref))
     {
-      return poppler_structure_element->document->doc->findPage(ref.num, ref.gen) - 1;
+      return poppler_structure_element->document->doc->findPage(ref) - 1;
     }
 
   return -1;
@@ -537,7 +537,7 @@ poppler_structure_element_get_id (PopplerStructureElement *poppler_structure_ele
   g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
   g_return_val_if_fail (poppler_structure_element->elem != nullptr, NULL);
 
-  GooString *string = poppler_structure_element->elem->getID ();
+  const GooString *string = poppler_structure_element->elem->getID ();
   return string ? _poppler_goo_string_to_utf8 (string) : nullptr;
 }
 
@@ -557,12 +557,12 @@ poppler_structure_element_get_title (PopplerStructureElement *poppler_structure_
   g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
   g_return_val_if_fail (poppler_structure_element->elem != nullptr, NULL);
 
-  GooString *string = poppler_structure_element->elem->getTitle ();
+  const GooString *string = poppler_structure_element->elem->getTitle ();
   return string ? _poppler_goo_string_to_utf8 (string) : nullptr;
 }
 
 /**
- * popppler_structure_element_get_abbreviation:
+ * poppler_structure_element_get_abbreviation:
  * @poppler_structure_element: A #PopplerStructureElement
  *
  * Acronyms and abbreviations contained in elements of type
@@ -583,7 +583,7 @@ poppler_structure_element_get_abbreviation (PopplerStructureElement *poppler_str
   if (poppler_structure_element->elem->getType () != StructElement::Span)
     return nullptr;
 
-  GooString *string = poppler_structure_element->elem->getExpandedAbbr ();
+  const GooString *string = poppler_structure_element->elem->getExpandedAbbr ();
   return string ? _poppler_goo_string_to_utf8 (string) : nullptr;
 }
 
@@ -605,7 +605,7 @@ poppler_structure_element_get_language (PopplerStructureElement *poppler_structu
   g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
   g_return_val_if_fail (poppler_structure_element->elem != nullptr, NULL);
 
-  GooString *string = poppler_structure_element->elem->getLanguage ();
+  const GooString *string = poppler_structure_element->elem->getLanguage ();
   return string ? _poppler_goo_string_to_utf8 (string) : nullptr;
 }
 
@@ -631,7 +631,7 @@ poppler_structure_element_get_alt_text (PopplerStructureElement *poppler_structu
   g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
   g_return_val_if_fail (poppler_structure_element->elem != nullptr, NULL);
 
-  GooString *string = poppler_structure_element->elem->getAltText ();
+  const GooString *string = poppler_structure_element->elem->getAltText ();
   return string ? _poppler_goo_string_to_utf8 (string) : nullptr;
 }
 
@@ -659,7 +659,7 @@ poppler_structure_element_get_actual_text (PopplerStructureElement *poppler_stru
   g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
   g_return_val_if_fail (poppler_structure_element->elem != nullptr, NULL);
 
-  GooString *string = poppler_structure_element->elem->getActualText ();
+  const GooString *string = poppler_structure_element->elem->getActualText ();
   return string ? _poppler_goo_string_to_utf8 (string) : nullptr;
 }
 
@@ -695,8 +695,8 @@ struct _PopplerStructureElementIter
 {
   PopplerDocument *document;
   union {
-    StructElement  *elem;
-    StructTreeRoot *root;
+    const StructElement  *elem;
+    const StructTreeRoot *root;
   };
   gboolean is_root;
   unsigned index;
@@ -792,11 +792,10 @@ PopplerStructureElementIter *
 poppler_structure_element_iter_new (PopplerDocument *poppler_document)
 {
   PopplerStructureElementIter *iter;
-  StructTreeRoot *root;
 
   g_return_val_if_fail (POPPLER_IS_DOCUMENT (poppler_document), NULL);
 
-  root = poppler_document->doc->getStructTreeRoot ();
+  const StructTreeRoot *root = poppler_document->doc->getStructTreeRoot ();
   if (root == nullptr)
     return nullptr;
 
@@ -850,11 +849,9 @@ poppler_structure_element_iter_next (PopplerStructureElementIter *iter)
 PopplerStructureElement *
 poppler_structure_element_iter_get_element (PopplerStructureElementIter *iter)
 {
-  StructElement *elem;
-
   g_return_val_if_fail (iter != nullptr, NULL);
 
-  elem = iter->is_root
+  const StructElement *elem = iter->is_root
     ? iter->root->getChild (iter->index)
     : iter->elem->getChild (iter->index);
 
@@ -876,7 +873,7 @@ poppler_structure_element_iter_get_element (PopplerStructureElementIter *iter)
 PopplerStructureElementIter *
 poppler_structure_element_iter_get_child (PopplerStructureElementIter *parent)
 {
-  StructElement *elem;
+  const StructElement *elem;
 
   g_return_val_if_fail (parent != nullptr, NULL);
 
@@ -1136,7 +1133,7 @@ poppler_text_span_get_font_name (PopplerTextSpan *poppler_text_span)
  * </programlisting></informalexample>
  *
  * Return value: (transfer full) (array length=n_text_spans) (element-type PopplerTextSpan):
- *    An array of #PopplerTextSpan elments.
+ *    An array of #PopplerTextSpan elements.
  *
  * Since: 0.26
  */
@@ -1155,8 +1152,8 @@ poppler_structure_element_get_text_spans (PopplerStructureElement *poppler_struc
   PopplerTextSpan **text_spans = g_new0 (PopplerTextSpan*, spans.size ());
 
   size_t i = 0;
-  for (TextSpanArray::const_iterator s = spans.begin (); s != spans.end (); ++s)
-    text_spans[i++] = text_span_poppler_text_span (*s);
+  for (const TextSpan &s : spans)
+    text_spans[i++] = text_span_poppler_text_span (s);
 
   *n_text_spans = spans.size ();
 

@@ -12,7 +12,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2018 Stefan Brüns <stefan.bruens@rwth-aachen.de>
-// Copyright (C) 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2019 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 //
 // To see a description of the changes please see the Changelog file that
@@ -22,11 +22,7 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#include <string.h>
+#include <cstring>
 #include "goo/gmem.h"
 #include "goo/GooLikely.h"
 #include "SplashErrorCodes.h"
@@ -60,9 +56,9 @@ SplashPath::SplashPath(SplashPath *path) {
   length = path->length;
   size = path->size;
   pts = (SplashPathPoint *)gmallocn(size, sizeof(SplashPathPoint));
-  flags = (Guchar *)gmallocn(size, sizeof(Guchar));
+  flags = (unsigned char *)gmallocn(size, sizeof(unsigned char));
   memcpy(pts, path->pts, length * sizeof(SplashPathPoint));
-  memcpy(flags, path->flags, length * sizeof(Guchar));
+  memcpy(flags, path->flags, length * sizeof(unsigned char));
   curSubpath = path->curSubpath;
   if (path->hints) {
     hintsLength = hintsSize = path->hintsLength;
@@ -73,7 +69,7 @@ SplashPath::SplashPath(SplashPath *path) {
   }
 }
 
-SplashPath::SplashPath(SplashPath&& path) {
+SplashPath::SplashPath(SplashPath&& path) noexcept {
   length = path.length;
   size = path.size;
   pts = path.pts;
@@ -110,7 +106,7 @@ void SplashPath::grow(int nPts) {
       size *= 2;
     }
     pts = (SplashPathPoint *)greallocn_checkoverflow(pts, size, sizeof(SplashPathPoint));
-    flags = (Guchar *)greallocn_checkoverflow(flags, size, sizeof(Guchar));
+    flags = (unsigned char *)greallocn_checkoverflow(flags, size, sizeof(unsigned char));
     if (unlikely(!pts || !flags)) {
       length = size = curSubpath = 0;
     }
@@ -186,7 +182,7 @@ SplashError SplashPath::curveTo(SplashCoord x1, SplashCoord y1,
   return splashOk;
 }
 
-SplashError SplashPath::close(GBool force) {
+SplashError SplashPath::close(bool force) {
   if (noCurrentPoint()) {
     return splashErrNoCurPt;
   }
@@ -225,11 +221,11 @@ void SplashPath::offset(SplashCoord dx, SplashCoord dy) {
   }
 }
 
-GBool SplashPath::getCurPt(SplashCoord *x, SplashCoord *y) {
+bool SplashPath::getCurPt(SplashCoord *x, SplashCoord *y) {
   if (noCurrentPoint()) {
-    return gFalse;
+    return false;
   }
   *x = pts[length - 1].x;
   *y = pts[length - 1].y;
-  return gTrue;
+  return true;
 }

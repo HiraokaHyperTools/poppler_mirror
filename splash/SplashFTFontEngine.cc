@@ -16,6 +16,7 @@
 // Copyright (C) 2009 Petr Gajdos <pgajdos@novell.com>
 // Copyright (C) 2011 Andreas Hartmetz <ahartmetz@gmail.com>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -24,11 +25,7 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#include <stdio.h>
+#include <cstdio>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -40,18 +37,12 @@
 #include "SplashFTFontFile.h"
 #include "SplashFTFontEngine.h"
 
-#ifdef VMS
-#if (__VMS_VER < 70000000)
-extern "C" int unlink(char *filename);
-#endif
-#endif
-
 //------------------------------------------------------------------------
 // SplashFTFontEngine
 //------------------------------------------------------------------------
 
-SplashFTFontEngine::SplashFTFontEngine(GBool aaA, GBool enableFreeTypeHintingA,
-				       GBool enableSlightHintingA, FT_Library libA) {
+SplashFTFontEngine::SplashFTFontEngine(bool aaA, bool enableFreeTypeHintingA,
+				       bool enableSlightHintingA, FT_Library libA) {
   FT_Int major, minor, patch;
 
   aa = aaA;
@@ -65,8 +56,8 @@ SplashFTFontEngine::SplashFTFontEngine(GBool aaA, GBool enableFreeTypeHintingA,
             (major == 2 && (minor > 1 || (minor == 1 && patch > 7)));
 }
 
-SplashFTFontEngine *SplashFTFontEngine::init(GBool aaA, GBool enableFreeTypeHintingA,
-					     GBool enableSlightHintingA) {
+SplashFTFontEngine *SplashFTFontEngine::init(bool aaA, bool enableFreeTypeHintingA,
+					     bool enableSlightHintingA) {
   FT_Library libA;
 
   if (FT_Init_FreeType(&libA)) {
@@ -110,7 +101,7 @@ SplashFontFile *SplashFTFontEngine::loadCIDFont(SplashFontFileID *idA,
     nCIDs = 0;
   } else {
     if (src->isFile) {
-      ff = FoFiType1C::load(src->fileName->getCString());
+      ff = FoFiType1C::load(src->fileName->c_str());
     } else {
       ff = FoFiType1C::make(src->buf, src->bufLen);
     }
@@ -143,7 +134,7 @@ SplashFontFile *SplashFTFontEngine::loadOpenTypeCFFFont(SplashFontFileID *idA,
   if (!codeToGID) {
     if (!useCIDs) {
       if (src->isFile) {
-        ff = FoFiTrueType::load(src->fileName->getCString());
+        ff = FoFiTrueType::load(src->fileName->c_str());
       } else {
         ff = FoFiTrueType::make(src->buf, src->bufLen);
       }

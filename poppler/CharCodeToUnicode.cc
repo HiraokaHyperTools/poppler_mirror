@@ -13,7 +13,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2006, 2008-2010, 2012 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006, 2008-2010, 2012, 2018-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2007 Julien Rebetez <julienr@svn.gnome.org>
 // Copyright (C) 2007 Koji Otani <sho@bbr.jp>
 // Copyright (C) 2008 Michael Vrable <mvrable@cs.ucsd.edu>
@@ -27,6 +27,7 @@
 // Copyright (C) 2017 Jean Ghali <jghali@libertysurf.fr>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+// Copyright (C) 2019 <corentinf@free.fr>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -35,12 +36,8 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include "goo/glibc.h"
 #include "goo/gmem.h"
 #include "goo/gfile.h"
@@ -82,7 +79,7 @@ static int getCharFromFile(void *data) {
 
 //------------------------------------------------------------------------
 
-static int hexCharVals[256] = {
+static const int hexCharVals[256] = {
   -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x
   -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 1x
   -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 2x
@@ -103,32 +100,32 @@ static int hexCharVals[256] = {
 
 // Parse a <len>-byte hex string <s> into *<val>.  Returns false on
 // error.
-static GBool parseHex(char *s, int len, Guint *val) {
+static bool parseHex(const char *s, int len, unsigned int *val) {
   int i, x;
 
   *val = 0;
   for (i = 0; i < len; ++i) {
     x = hexCharVals[s[i] & 0xff];
     if (x < 0) {
-      return gFalse;
+      return false;
     }
     *val = (*val << 4) + x;
   }
-  return gTrue;
+  return true;
 }
 
 //------------------------------------------------------------------------
 
 CharCodeToUnicode *CharCodeToUnicode::makeIdentityMapping() {
   CharCodeToUnicode *ctu = new CharCodeToUnicode();
-  ctu->isIdentity = gTrue;
+  ctu->isIdentity = true;
   ctu->mapLen = 1;
   ctu->map = (Unicode *)gmallocn(ctu->mapLen, sizeof(Unicode));
   return ctu;
 }
 
 CharCodeToUnicode *CharCodeToUnicode::parseCIDToUnicode(const char *fileName,
-							GooString *collection) {
+							const GooString *collection) {
   FILE *f;
   Unicode *mapA;
   CharCode size, mapLenA;
@@ -162,14 +159,14 @@ CharCodeToUnicode *CharCodeToUnicode::parseCIDToUnicode(const char *fileName,
   }
   fclose(f);
 
-  ctu = new CharCodeToUnicode(collection->copy(), mapA, mapLenA, gTrue,
+  ctu = new CharCodeToUnicode(collection->copy(), mapA, mapLenA, true,
 			      nullptr, 0, 0);
   gfree(mapA);
   return ctu;
 }
 
 CharCodeToUnicode *CharCodeToUnicode::parseUnicodeToUnicode(
-						    GooString *fileName) {
+						    const GooString *fileName) {
   FILE *f;
   Unicode *mapA;
   CharCodeToUnicodeString *sMapA;
@@ -183,7 +180,7 @@ CharCodeToUnicode *CharCodeToUnicode::parseUnicodeToUnicode(
   int line, n, i;
   char *tokptr;
 
-  if (!(f = openFile(fileName->getCString(), "r"))) {
+  if (!(f = openFile(fileName->c_str(), "r"))) {
     gfree(uBuf);
     error(errIO, -1, "Couldn't open unicodeToUnicode file '{0:t}'",
 	  fileName);
@@ -256,7 +253,7 @@ CharCodeToUnicode *CharCodeToUnicode::parseUnicodeToUnicode(
   }
   fclose(f);
 
-  ctu = new CharCodeToUnicode(fileName->copy(), mapA, len, gTrue,
+  ctu = new CharCodeToUnicode(fileName->copy(), mapA, len, true,
 			      sMapA, sMapLenA, sMapSizeA);
   gfree(mapA);
   gfree(uBuf);
@@ -264,20 +261,19 @@ CharCodeToUnicode *CharCodeToUnicode::parseUnicodeToUnicode(
 }
 
 CharCodeToUnicode *CharCodeToUnicode::make8BitToUnicode(Unicode *toUnicode) {
-  return new CharCodeToUnicode(nullptr, toUnicode, 256, gTrue, nullptr, 0, 0);
+  return new CharCodeToUnicode(nullptr, toUnicode, 256, true, nullptr, 0, 0);
 }
 
-CharCodeToUnicode *CharCodeToUnicode::parseCMap(GooString *buf, int nBits) {
+CharCodeToUnicode *CharCodeToUnicode::parseCMap(const GooString *buf, int nBits) {
   CharCodeToUnicode *ctu;
-  char *p;
 
   ctu = new CharCodeToUnicode(nullptr);
-  p = buf->getCString();
+  const char *p = buf->c_str();
   ctu->parseCMap1(&getCharFromString, &p, nBits);
   return ctu;
 }
 
-CharCodeToUnicode *CharCodeToUnicode::parseCMapFromFile(GooString *fileName,
+CharCodeToUnicode *CharCodeToUnicode::parseCMapFromFile(const GooString *fileName,
   int nBits) {
   CharCodeToUnicode *ctu;
   FILE *f;
@@ -293,10 +289,8 @@ CharCodeToUnicode *CharCodeToUnicode::parseCMapFromFile(GooString *fileName,
   return ctu;
 }
 
-void CharCodeToUnicode::mergeCMap(GooString *buf, int nBits) {
-  char *p;
-
-  p = buf->getCString();
+void CharCodeToUnicode::mergeCMap(const GooString *buf, int nBits) {
+  const char *p = buf->c_str();
   parseCMap1(&getCharFromString, &p, nBits);
 }
 
@@ -487,10 +481,7 @@ CharCodeToUnicode::CharCodeToUnicode() {
   sMap = nullptr;
   sMapLen = sMapSize = 0;
   refCnt = 1;
-  isIdentity = gFalse;
-#ifdef MULTITHREADED
-  gInitMutex(&mutex);
-#endif
+  isIdentity = false;
 }
 
 CharCodeToUnicode::CharCodeToUnicode(GooString *tagA) {
@@ -505,14 +496,11 @@ CharCodeToUnicode::CharCodeToUnicode(GooString *tagA) {
   sMap = nullptr;
   sMapLen = sMapSize = 0;
   refCnt = 1;
-  isIdentity = gFalse;
-#ifdef MULTITHREADED
-  gInitMutex(&mutex);
-#endif
+  isIdentity = false;
 }
 
 CharCodeToUnicode::CharCodeToUnicode(GooString *tagA, Unicode *mapA,
-				     CharCode mapLenA, GBool copyMap,
+				     CharCode mapLenA, bool copyMap,
 				     CharCodeToUnicodeString *sMapA,
 				     int sMapLenA, int sMapSizeA) {
   tag = tagA;
@@ -527,10 +515,7 @@ CharCodeToUnicode::CharCodeToUnicode(GooString *tagA, Unicode *mapA,
   sMapLen = sMapLenA;
   sMapSize = sMapSizeA;
   refCnt = 1;
-  isIdentity = gFalse;
-#ifdef MULTITHREADED
-  gInitMutex(&mutex);
-#endif
+  isIdentity = false;
 }
 
 CharCodeToUnicode::~CharCodeToUnicode() {
@@ -542,37 +527,19 @@ CharCodeToUnicode::~CharCodeToUnicode() {
     for (int i = 0; i < sMapLen; ++i) gfree(sMap[i].u);
     gfree(sMap);
   }
-#ifdef MULTITHREADED
-  gDestroyMutex(&mutex);
-#endif
 }
 
 void CharCodeToUnicode::incRefCnt() {
-#ifdef MULTITHREADED
-  gLockMutex(&mutex);
-#endif
   ++refCnt;
-#ifdef MULTITHREADED
-  gUnlockMutex(&mutex);
-#endif
 }
 
 void CharCodeToUnicode::decRefCnt() {
-  GBool done;
-
-#ifdef MULTITHREADED
-  gLockMutex(&mutex);
-#endif
-  done = --refCnt == 0;
-#ifdef MULTITHREADED
-  gUnlockMutex(&mutex);
-#endif
-  if (done) {
+  if (--refCnt == 0) {
     delete this;
   }
 }
 
-GBool CharCodeToUnicode::match(GooString *tagA) {
+bool CharCodeToUnicode::match(const GooString *tagA) {
   return tag && !tag->cmp(tagA);
 }
 
@@ -613,7 +580,7 @@ void CharCodeToUnicode::setMapping(CharCode c, Unicode *u, int len) {
   }
 }
 
-int CharCodeToUnicode::mapToUnicode(CharCode c, Unicode **u) {
+int CharCodeToUnicode::mapToUnicode(CharCode c, Unicode const **u) const {
   int i;
 
   if (isIdentity) {
@@ -637,7 +604,7 @@ int CharCodeToUnicode::mapToUnicode(CharCode c, Unicode **u) {
   return 0;
 }
 
-int CharCodeToUnicode::mapToCharCode(Unicode* u, CharCode *c, int usize) const {
+int CharCodeToUnicode::mapToCharCode(const Unicode* u, CharCode *c, int usize) const {
   //look for charcode in map
   if (usize == 1 || (usize > 1 && !(*u & ~0xff))) {
     if (isIdentity) {
@@ -656,7 +623,7 @@ int CharCodeToUnicode::mapToCharCode(Unicode* u, CharCode *c, int usize) const {
     //for each entry in the sMap
     for (i=0; i<sMapLen; i++) {
       //if the entry's unicode length isn't the same are usize, the strings 
-      // are obviously differents
+      // are obviously different
       if (sMap[i].len != usize) continue;
       //compare the string char by char
       for (j=0; j<sMap[i].len; j++) {
@@ -698,7 +665,7 @@ CharCodeToUnicodeCache::~CharCodeToUnicodeCache() {
   gfree(cache);
 }
 
-CharCodeToUnicode *CharCodeToUnicodeCache::getCharCodeToUnicode(GooString *tag) {
+CharCodeToUnicode *CharCodeToUnicodeCache::getCharCodeToUnicode(const GooString *tag) {
   CharCodeToUnicode *ctu;
   int i, j;
 

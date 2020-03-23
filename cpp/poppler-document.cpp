@@ -2,6 +2,9 @@
  * Copyright (C) 2009-2011, Pino Toscano <pino@kde.org>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
  * Copyright (C) 2017, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2020, Adam Reichold <adam.reichold@t-online.de>
+ * Copyright (C) 2019, Masamichi Hosoda <trueroad@trueroad.jp>
+ * Copyright (C) 2019, 2020, Oliver Sander <oliver.sander@tu-dresden.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,11 +21,16 @@
  * Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+/**
+ \file poppler-document.h
+ */
+#include "poppler-destination.h"
 #include "poppler-document.h"
 #include "poppler-embedded-file.h"
 #include "poppler-page.h"
 #include "poppler-toc.h"
 
+#include "poppler-destination-private.h"
 #include "poppler-document-private.h"
 #include "poppler-embedded-file-private.h"
 #include "poppler-page-private.h"
@@ -33,6 +41,7 @@
 #include "DateInfo.h"
 #include "ErrorCodes.h"
 #include "GlobalParams.h"
+#include "Link.h"
 #include "Outline.h"
 
 #include <algorithm>
@@ -41,36 +50,9 @@
 
 using namespace poppler;
 
-unsigned int poppler::initer::count = 0U;
-
-initer::initer()
-{
-    if (!count) {
-        globalParams = new GlobalParams();
-        setErrorCallback(detail::error_function, nullptr);
-    }
-    count++;
-}
-
-initer::~initer()
-{
-    if (count > 0) {
-        --count;
-        if (!count) {
-            delete globalParams;
-            globalParams = nullptr;
-        }
-    }
-}
-
-
 document_private::document_private(GooString *file_path, const std::string &owner_password,
                                    const std::string &user_password)
-    : initer()
-    , doc(nullptr)
-    , raw_doc_data(nullptr)
-    , raw_doc_data_length(0)
-    , is_locked(false)
+    : document_private()
 {
     GooString goo_owner_password(owner_password.c_str());
     GooString goo_user_password(user_password.c_str());
@@ -80,11 +62,7 @@ document_private::document_private(GooString *file_path, const std::string &owne
 document_private::document_private(byte_array *file_data,
                                    const std::string &owner_password,
                                    const std::string &user_password)
-    : initer()
-    , doc(nullptr)
-    , raw_doc_data(nullptr)
-    , raw_doc_data_length(0)
-    , is_locked(false)
+    : document_private()
 {
     file_data->swap(doc_data);
     MemStream *memstr = new MemStream(&doc_data[0], 0, doc_data.size(), Object(objNull));
@@ -96,16 +74,23 @@ document_private::document_private(byte_array *file_data,
 document_private::document_private(const char *file_data, int file_data_length,
                                    const std::string &owner_password,
                                    const std::string &user_password)
-    : initer()
-    , doc(nullptr)
-    , raw_doc_data(file_data)
-    , raw_doc_data_length(file_data_length)
-    , is_locked(false)
+    : document_private()
 {
+    raw_doc_data = file_data;
+    raw_doc_data_length = file_data_length;
     MemStream *memstr = new MemStream(const_cast<char *>(raw_doc_data), 0, raw_doc_data_length, Object(objNull));
     GooString goo_owner_password(owner_password.c_str());
     GooString goo_user_password(user_password.c_str());
     doc = new PDFDoc(memstr, &goo_owner_password, &goo_user_password);
+}
+
+document_private::document_private()
+    : GlobalParamsIniter(detail::error_function)
+    , doc(nullptr)
+    , raw_doc_data(nullptr)
+    , raw_doc_data_length(0)
+    , is_locked(false)
+{
 }
 
 document_private::~document_private()
@@ -197,7 +182,7 @@ bool document::is_locked() const
 }
 
 /**
- Unlocks the current doocument, if locked.
+ Unlocks the current document, if locked.
 
  \returns the new locking status of the document
  */
@@ -370,7 +355,7 @@ bool document::set_info_key(const std::string &key, const ustring &val)
 }
 
 /**
- Gets the time_t value value of the specified \p key of the document
+ Gets the time_t value of the specified \p key of the document
  information.
 
  \returns the time_t value for the \p key
@@ -863,10 +848,10 @@ bool document::get_pdf_id(std::string *permanent_id, std::string *update_id) con
     }
 
     if (permanent_id) {
-        *permanent_id = goo_permanent_id.getCString();
+        *permanent_id = goo_permanent_id.c_str();
     }
     if (update_id) {
-        *update_id = goo_update_id.getCString();
+        *update_id = goo_update_id.c_str();
     }
 
     return true;
@@ -1001,6 +986,54 @@ std::vector<embedded_file *> document::embedded_files() const
         }
     }
     return d->embedded_files;
+}
+
+/**
+ Creates a map of all the named destinations in the %document.
+
+ \note The destination names may contain \\0 and other binary values
+ so they are not printable and cannot convert to null-terminated C strings.
+
+ \returns the map of the each name and destination
+
+ \since 0.74
+ */
+std::map<std::string, destination> document::create_destination_map() const
+{
+    std::map<std::string, destination> m;
+
+    Catalog *catalog = d->doc->getCatalog();
+    if (!catalog)
+        return m;
+
+    // Iterate from name-dict
+    const int nDests = catalog->numDests();
+    for (int i = 0; i < nDests; ++i ) {
+        std::string key(catalog->getDestsName (i));
+        std::unique_ptr<LinkDest> link_dest = catalog->getDestsDest (i);
+
+        if (link_dest) {
+            destination dest(new destination_private(link_dest.get(), d->doc));
+
+            m.emplace(std::move(key), std::move(dest));
+        }
+    }
+
+    // Iterate from name-tree
+    const int nDestsNameTree = catalog->numDestNameTree();
+    for (int i = 0; i < nDestsNameTree; ++i ) {
+        std::string key(catalog->getDestNameTreeName (i)->c_str (),
+                        catalog->getDestNameTreeName (i)->getLength ());
+        std::unique_ptr<LinkDest> link_dest = catalog->getDestNameTreeDest (i);
+
+        if (link_dest) {
+            destination dest(new destination_private(link_dest.get(), d->doc));
+
+            m.emplace(std::move(key), std::move(dest));
+        }
+    }
+
+    return m;
 }
 
 /**

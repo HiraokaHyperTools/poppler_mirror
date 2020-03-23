@@ -1,10 +1,11 @@
 /* poppler-link.h: qt interface to poppler
- * Copyright (C) 2006, 2013, 2016, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006, 2013, 2016, 2018, 2019, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2007-2008, 2010, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010, 2012, Guillermo Amaral <gamaral@kdab.com>
  * Copyright (C) 2012, Tobias Koenig <tokoe@kdab.com>
  * Copyright (C) 2013, Anthony Granger <grangeranthony@gmail.com>
  * Copyright (C) 2018 Intevation GmbH <intevation@intevation.de>
+ * Copyright (C) 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  * Adapting code from
  *   Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
  *
@@ -34,8 +35,6 @@
 
 struct Ref;
 class MediaRendition;
-class MovieAnnotation;
-class ScreenAnnotation;
 
 namespace Poppler {
 
@@ -53,6 +52,8 @@ class LinkRenditionPrivate;
 class LinkOCGStatePrivate;
 class LinkHidePrivate;
 class MediaRendition;
+class MovieAnnotation;
+class ScreenAnnotation;
 class SoundObject;
 
 /**
@@ -74,9 +75,9 @@ class POPPLER_QT5_EXPORT LinkDestination
 		{
 			/**
 			 * The new viewport is specified in terms of:
-			 * - possibile new left coordinate (see isChangeLeft() )
-			 * - possibile new top coordinate (see isChangeTop() )
-			 * - possibile new zoom level (see isChangeZoom() )
+			 * - possible new left coordinate (see isChangeLeft() )
+			 * - possible new top coordinate (see isChangeTop() )
+			 * - possible new zoom level (see isChangeZoom() )
 			 */
 			destXYZ = 1,
 			destFit = 2,
@@ -177,8 +178,6 @@ class POPPLER_QT5_EXPORT LinkDestination
  */
 class POPPLER_QT5_EXPORT Link
 {
-	friend class OptContentModel;
-
 	public:
 		/// \cond PRIVATE
 		Link( const QRectF &linkArea );
@@ -223,7 +222,7 @@ class POPPLER_QT5_EXPORT Link
 		QRectF linkArea() const;
 
 		/**
-		 * Get the next links to be activiated / executed after this link.
+		 * Get the next links to be activated / executed after this link.
 		 *
 		 * \since 0.64
 		 */
@@ -259,11 +258,12 @@ class POPPLER_QT5_EXPORT LinkGoto : public Link
 		 * \param extFileName if not empty, the file name to be open
 		 * \param destination the destination to be reached
 		 */
+		// TODO Next ABI break, make extFileName const &
 		LinkGoto( const QRectF &linkArea, QString extFileName, const LinkDestination & destination );
 		/**
 		 * Destructor.
 		 */
-		~LinkGoto();
+		~LinkGoto() override;
 
 		/**
 		 * Whether the destination is in an external document
@@ -318,7 +318,7 @@ class POPPLER_QT5_EXPORT LinkExecute : public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkExecute();
+		~LinkExecute() override;
 		LinkType linkType() const override;
 
 	private:
@@ -352,7 +352,7 @@ class POPPLER_QT5_EXPORT LinkBrowse : public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkBrowse();
+		~LinkBrowse() override;
 		LinkType linkType() const override;
 
 	private:
@@ -403,7 +403,7 @@ class POPPLER_QT5_EXPORT LinkAction : public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkAction();
+		~LinkAction() override;
 		LinkType linkType() const override;
 
 	private:
@@ -424,7 +424,7 @@ class POPPLER_QT5_EXPORT LinkSound : public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkSound();
+		~LinkSound() override;
 
 		LinkType linkType() const override;
 
@@ -495,12 +495,13 @@ class POPPLER_QT5_EXPORT LinkRendition : public Link
 		 * \param annotationReference the object reference of the screen annotation associated with this rendition action
 		 * \since 0.22
 		 */
+		// TODO Next ABI break, remove & from annotationReference
 		LinkRendition( const QRectF &linkArea, ::MediaRendition *rendition, int operation, const QString &script, const Ref &annotationReference );
 
 		/**
 		 * Destructor.
 		 */
-		~LinkRendition();
+		~LinkRendition() override;
 
 		LinkType linkType() const override;
 
@@ -553,7 +554,7 @@ class POPPLER_QT5_EXPORT LinkJavaScript : public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkJavaScript();
+		~LinkJavaScript() override;
 
 		LinkType linkType() const override;
 
@@ -594,11 +595,12 @@ class POPPLER_QT5_EXPORT LinkMovie : public Link
 		 *
 		 * Note: This constructor is supposed to be used by Poppler::Page only.
 		 */
+		// TODO Next ABI break, remove & from annotationReference
 		LinkMovie( const QRectF &linkArea, Operation operation, const QString &annotationTitle, const Ref &annotationReference );
 		/**
 		 * Destructor.
 		 */
-		~LinkMovie();
+		~LinkMovie() override;
 		LinkType linkType() const override;
 		/**
 		 * Returns the operation to be performed on the movie.
@@ -621,6 +623,8 @@ class POPPLER_QT5_EXPORT LinkMovie : public Link
  */
 class POPPLER_QT5_EXPORT LinkOCGState : public Link
 {
+	friend class OptContentModel;
+
 	public:
 		/**
 		 * Create a new OCGState link. This is only used by Poppler::Page.
@@ -629,7 +633,7 @@ class POPPLER_QT5_EXPORT LinkOCGState : public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkOCGState();
+		~LinkOCGState() override;
 
 		LinkType linkType() const override;
 
@@ -653,7 +657,7 @@ class POPPLER_QT5_EXPORT LinkHide: public Link
 		/**
 		 * Destructor.
 		 */
-		~LinkHide();
+		~LinkHide() override;
 
 		LinkType linkType() const override;
 

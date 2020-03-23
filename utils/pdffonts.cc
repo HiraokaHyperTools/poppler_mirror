@@ -19,6 +19,7 @@
 // Copyright (C) 2012, 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2013 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+// Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -27,11 +28,12 @@
 
 #include "config.h"
 #include <poppler-config.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <string.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstddef>
+#include <cmath>
+#include <memory>
+#include <string>
 #include "parseargs.h"
 #include "goo/GooString.h"
 #include "goo/gmem.h"
@@ -59,11 +61,11 @@ static const char *fontTypeNames[] = {
 
 static int firstPage = 1;
 static int lastPage = 0;
-static GBool showSubst = gFalse;
+static bool showSubst = false;
 static char ownerPassword[33] = "\001";
 static char userPassword[33] = "\001";
-static GBool printVersion = gFalse;
-static GBool printHelp = gFalse;
+static bool printVersion = false;
+static bool printHelp = false;
 
 static const ArgDesc argDesc[] = {
   {"-f",      argInt,      &firstPage,     0,
@@ -90,14 +92,10 @@ static const ArgDesc argDesc[] = {
 };
 
 int main(int argc, char *argv[]) {
-  PDFDoc *doc;
-  GooString *fileName;
-  GooString *ownerPW, *userPW;
-  GBool ok;
-  int exitCode;
+  std::unique_ptr<GooString> ownerPW, userPW;
+  bool ok;
 
   Win32Console win32Console(&argc, &argv);
-  exitCode = 99;
 
   // parse args
   ok = parseArgs(argDesc, &argc, argv);
@@ -109,42 +107,30 @@ int main(int argc, char *argv[]) {
       printUsage("pdffonts", "<PDF-file>", argDesc);
     }
     if (printVersion || printHelp)
-      exitCode = 0;
-    goto err0;
+      return 0;
+    return 99;
   }
-  fileName = new GooString(argv[1]);
+
+  std::string fileName(argv[1]);
+  if (fileName == "-") {
+      fileName = "fd://0";
+  }
 
   // read config file
-  globalParams = new GlobalParams();
+  globalParams = std::make_unique<GlobalParams>();
 
   // open PDF file
   if (ownerPassword[0] != '\001') {
-    ownerPW = new GooString(ownerPassword);
-  } else {
-    ownerPW = nullptr;
+    ownerPW = std::make_unique<GooString>(ownerPassword);
   }
   if (userPassword[0] != '\001') {
-    userPW = new GooString(userPassword);
-  } else {
-    userPW = nullptr;
-  }
-  if (fileName->cmp("-") == 0) {
-      delete fileName;
-      fileName = new GooString("fd://0");
+    userPW = std::make_unique<GooString>(userPassword);
   }
 
-  doc = PDFDocFactory().createPDFDoc(*fileName, ownerPW, userPW);
-  delete fileName;
+  auto doc = std::unique_ptr<PDFDoc>(PDFDocFactory().createPDFDoc(GooString(fileName), ownerPW.get(), userPW.get()));
 
-  if (userPW) {
-    delete userPW;
-  }
-  if (ownerPW) {
-    delete ownerPW;
-  }
   if (!doc->isOk()) {
-    exitCode = 1;
-    goto err1;
+    return 1;
   }
 
   // get page range
@@ -158,24 +144,22 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,
             "Wrong page range given: the first page (%d) can not be after the last page (%d).\n",
             firstPage, lastPage);
-    goto err1;
+    return 99;
   }
 
   // get the fonts
   {
-    FontInfoScanner scanner(doc, firstPage - 1);
-    GooList *fonts = scanner.scan(lastPage - firstPage + 1);
+    FontInfoScanner scanner(doc.get(), firstPage - 1);
+    const std::vector<FontInfo*> fonts = scanner.scan(lastPage - firstPage + 1);
 
     if (showSubst) {
       // print the font substitutions
       printf("name                                 object ID substitute font                      substitute font file\n");
       printf("------------------------------------ --------- ------------------------------------ ------------------------------------\n");
-      if (fonts) {
-        for (int i = 0; i < fonts->getLength(); ++i) {
-          FontInfo *font = (FontInfo *)fonts->get(i);
+        for (const FontInfo* font : fonts) {
           if (font->getFile()) {
             printf("%-36s",
-                   font->getName() ? font->getName()->getCString() : "[none]");
+                   font->getName() ? font->getName()->c_str() : "[none]");
             const Ref fontRef = font->getRef();
             if (fontRef.gen >= 100000) {
               printf(" [none]");
@@ -183,24 +167,20 @@ int main(int argc, char *argv[]) {
               printf(" %6d %2d", fontRef.num, fontRef.gen);
             }
             printf(" %-36s %s\n",
-                   font->getSubstituteName() ? font->getSubstituteName()->getCString() : "[none]",
-                   font->getFile()->getCString());
+                   font->getSubstituteName() ? font->getSubstituteName()->c_str() : "[none]",
+                   font->getFile()->c_str());
           }
           delete font;
         }
-        delete fonts;
-      }
     } else {
       // print the font info
       printf("name                                 type              encoding         emb sub uni object ID\n");
       printf("------------------------------------ ----------------- ---------------- --- --- --- ---------\n");
-      if (fonts) {
-        for (int i = 0; i < fonts->getLength(); ++i) {
-          FontInfo *font = (FontInfo *)fonts->get(i);
+        for (const FontInfo* font : fonts) {
           printf("%-36s %-17s %-16s %-3s %-3s %-3s",
-                 font->getName() ? font->getName()->getCString() : "[none]",
+                 font->getName() ? font->getName()->c_str() : "[none]",
                  fontTypeNames[font->getType()],
-                 font->getEncoding()->getCString(),
+                 font->getEncoding()->c_str(),
                  font->getEmbedded() ? "yes" : "no",
                  font->getSubset() ? "yes" : "no",
                  font->getToUnicode() ? "yes" : "no");
@@ -212,19 +192,10 @@ int main(int argc, char *argv[]) {
           }
           delete font;
         }
-        delete fonts;
-      }
     }
   }
 
-  exitCode = 0;
-
- err1:
-  delete doc;
-  delete globalParams;
- err0:
-
-  return exitCode;
+  return 0;
 }
 
 

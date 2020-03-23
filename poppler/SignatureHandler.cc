@@ -6,10 +6,12 @@
 //
 // Copyright 2015, 2016 André Guerreiro <aguerreiro1985@gmail.com>
 // Copyright 2015 André Esser <bepandre@hotmail.com>
-// Copyright 2015, 2016, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright 2015, 2016, 2018, 2019 Albert Astals Cid <aacid@kde.org>
 // Copyright 2015 Markus Kilås <digital@markuspage.com>
 // Copyright 2017 Sebastian Rasmussen <sebras@gmail.com>
 // Copyright 2017 Hans-Ulrich Jüttner <huj@froreich-bioscientia.de>
+// Copyright 2018 Chinmoy Ranjan Pradhan <chinmoyrp65@protonmail.com>
+// Copyright 2018 Oliver Sander <oliver.sander@tu-dresden.de>
 //
 //========================================================================
 
@@ -18,9 +20,18 @@
 #include "SignatureHandler.h"
 #include "goo/gmem.h"
 #include <secmod.h>
+#include <keyhi.h>
+#include <secder.h>
 
 #include <dirent.h>
 #include <Error.h>
+
+static void shutdownNss()
+{
+  if (NSS_Shutdown() != SECSuccess) {
+    fprintf(stderr, "NSS_Shutdown failed: %s\n", PR_ErrorToString(PORT_GetError(), PR_LANGUAGE_I_DEFAULT));
+  }
+}
 
 unsigned int SignatureHandler::digestLength(SECOidTag digestAlgId)
 {
@@ -41,10 +52,14 @@ unsigned int SignatureHandler::digestLength(SECOidTag digestAlgId)
 
 char *SignatureHandler::getSignerName()
 {
-  if (!CMSSignerInfo)
+  if (!CMSSignerInfo || !NSS_IsInitialized())
       return nullptr;
 
   CERTCertificate *cert = NSS_CMSSignerInfo_GetSigningCertificate(CMSSignerInfo, CERT_GetDefaultCertDB());
+
+  if (!cert)
+      return nullptr;
+
   return CERT_GetCommonName(&cert->subject);
 }
 
@@ -78,8 +93,109 @@ time_t SignatureHandler::getSigningTime()
   return static_cast<time_t>(sTime/1000000);
 }
 
+X509CertificateInfo::EntityInfo SignatureHandler::getEntityInfo(CERTName *entityName) const
+{
+  X509CertificateInfo::EntityInfo info;
 
-GooString *SignatureHandler::getDefaultFirefoxCertDB_Linux()
+  if (!entityName)
+    return info;
+
+  char *dn = CERT_NameToAscii(entityName);
+  if (dn) {
+      info.distinguishedName = dn;
+      PORT_Free(dn);
+  }
+
+  char *cn = CERT_GetCommonName(entityName);
+  if (cn) {
+    info.commonName = cn;
+    PORT_Free(cn);
+  }
+
+  char *email = CERT_GetCertEmailAddress(entityName);
+  if (email) {
+    info.email = email;
+    PORT_Free(email);
+  }
+
+  char *org = CERT_GetOrgName(entityName);
+  if (org) {
+    info.organization = org;
+    PORT_Free(org);
+  }
+
+  return info;
+}
+
+static GooString SECItemToGooString(const SECItem &secItem)
+{
+  // TODO do we need to handle secItem.type;
+  return GooString((const char *)secItem.data, secItem.len);
+}
+
+std::unique_ptr<X509CertificateInfo> SignatureHandler::getCertificateInfo() const
+{
+  if (!CMSSignerInfo)
+    return nullptr;
+
+  CERTCertificate *cert = NSS_CMSSignerInfo_GetSigningCertificate(CMSSignerInfo, CERT_GetDefaultCertDB());
+  if (!cert)
+    return nullptr;
+
+  auto certInfo = std::make_unique<X509CertificateInfo>();
+
+  certInfo->setVersion(DER_GetInteger(&cert->version) + 1);
+  certInfo->setSerialNumber(SECItemToGooString(cert->serialNumber));
+
+  //issuer info
+  certInfo->setIssuerInfo(getEntityInfo(&cert->issuer));
+
+  //validity
+  PRTime notBefore, notAfter;
+  CERT_GetCertTimes(cert, &notBefore, &notAfter);
+  X509CertificateInfo::Validity certValidity;
+  certValidity.notBefore = static_cast<time_t>(notBefore/1000000);
+  certValidity.notAfter = static_cast<time_t>(notAfter/1000000);
+  certInfo->setValidity(certValidity);
+
+  //subject info
+  certInfo->setSubjectInfo(getEntityInfo(&cert->subject));
+
+  //public key info
+  X509CertificateInfo::PublicKeyInfo pkInfo;
+  SECKEYPublicKey *pk = CERT_ExtractPublicKey(cert);
+  switch (pk->keyType)
+  {
+    case rsaKey:
+      pkInfo.publicKey = SECItemToGooString(pk->u.rsa.modulus);
+      pkInfo.publicKeyType = RSAKEY;
+      break;
+    case dsaKey:
+      pkInfo.publicKey = SECItemToGooString(pk->u.dsa.publicValue);
+      pkInfo.publicKeyType = DSAKEY;
+      break;
+    case ecKey:
+      pkInfo.publicKey = SECItemToGooString(pk->u.ec.publicValue);
+      pkInfo.publicKeyType = ECKEY;
+      break;
+    default:
+      pkInfo.publicKey = SECItemToGooString(cert->subjectPublicKeyInfo.subjectPublicKey);
+      pkInfo.publicKeyType = OTHERKEY;
+      break;
+  }
+  pkInfo.publicKeyStrength = SECKEY_PublicKeyStrengthInBits(pk);
+  certInfo->setPublicKeyInfo(std::move(pkInfo));
+
+  certInfo->setKeyUsageExtensions(cert->keyUsage);
+  certInfo->setCertificateDER(SECItemToGooString(cert->derCert));
+  certInfo->setIsSelfSigned(CERT_CompareName(&cert->subject, &cert->issuer) == SECEqual);
+
+  SECKEY_DestroyPublicKey(pk);
+
+  return certInfo;
+}
+
+static GooString *getDefaultFirefoxCertDB_Linux()
 {
   GooString * finalPath = nullptr;
   DIR *toSearchIn;
@@ -88,7 +204,7 @@ GooString *SignatureHandler::getDefaultFirefoxCertDB_Linux()
   GooString * homePath = new GooString(getenv("HOME"));
   homePath = homePath->append("/.mozilla/firefox/");
 
-  if ((toSearchIn = opendir(homePath->getCString())) == nullptr) {
+  if ((toSearchIn = opendir(homePath->c_str())) == nullptr) {
     error(errInternal, 0, "couldn't find default Firefox Folder");
     delete homePath;
     return nullptr;
@@ -96,9 +212,9 @@ GooString *SignatureHandler::getDefaultFirefoxCertDB_Linux()
   do {
     if ((subFolder = readdir(toSearchIn)) != nullptr) {
       if (strstr(subFolder->d_name, "default") != nullptr) {
-	finalPath = homePath->append(subFolder->d_name);
-	closedir(toSearchIn);
-	return finalPath;
+        finalPath = homePath->append(subFolder->d_name);
+        closedir(toSearchIn);
+        return finalPath;
       }
     }
   } while (subFolder != nullptr);
@@ -111,18 +227,47 @@ GooString *SignatureHandler::getDefaultFirefoxCertDB_Linux()
 /**
  * Initialise NSS
  */
-void SignatureHandler::init_nss() 
+void SignatureHandler::setNSSDir(const GooString &nssDir)
 {
-  GooString *certDBPath = getDefaultFirefoxCertDB_Linux();
-  if (certDBPath == nullptr) {
-    NSS_Init("sql:/etc/pki/nssdb");
-  } else {
-    NSS_Init(certDBPath->getCString());
-  }
-  //Make sure NSS root certificates module is loaded
-  SECMOD_AddNewModule("Root Certs", "libnssckbi.so", 0, 0);
+  static bool setNssDirCalled = false;
 
-  delete certDBPath;
+  if (NSS_IsInitialized() && nssDir.getLength() > 0) {
+    error(errInternal, 0, "You need to call setNSSDir before signature validation related operations happen");
+    return;
+  }
+
+  if (setNssDirCalled)
+    return;
+
+  setNssDirCalled = true;
+
+  atexit(shutdownNss);
+
+  bool initSuccess = false;
+  if (nssDir.getLength() > 0) {
+    initSuccess = (NSS_Init(nssDir.c_str()) == SECSuccess);
+  } else {
+    GooString *certDBPath = getDefaultFirefoxCertDB_Linux();
+    if (certDBPath == nullptr) {
+      initSuccess = (NSS_Init("sql:/etc/pki/nssdb") == SECSuccess);
+    } else {
+      initSuccess = (NSS_Init(certDBPath->c_str()) == SECSuccess);
+    }
+    if (!initSuccess) {
+      GooString homeNssDb(getenv("HOME"));
+      homeNssDb.append("/.pki/nssdb");
+      initSuccess = (NSS_Init(homeNssDb.c_str()) == SECSuccess);
+      if (!initSuccess) {
+	NSS_NoDB_Init(nullptr);
+      }
+    }
+    delete certDBPath;
+  }
+
+  if (initSuccess) {
+    //Make sure NSS root certificates module is loaded
+    SECMOD_AddNewModule("Root Certs", "libnssckbi.so", 0, 0);
+  }
 }
 
 
@@ -133,7 +278,7 @@ SignatureHandler::SignatureHandler(unsigned char *p7, int p7_length)
    CMSSignerInfo(nullptr),
    temp_certs(nullptr)
 {
-  init_nss();
+  setNSSDir({});
   CMSitem.data = p7;
   CMSitem.len = p7_length;
   CMSMessage = CMS_MessageCreate(&CMSitem);
@@ -171,9 +316,6 @@ SignatureHandler::~SignatureHandler()
     HASH_Destroy(hash_context);
 
   free(temp_certs);
-
-  if (NSS_Shutdown()!=SECSuccess)
-    fprintf(stderr, "Detail: %s\n", PR_ErrorToString(PORT_GetError(), PR_LANGUAGE_I_DEFAULT));
 }
 
 NSSCMSMessage *SignatureHandler::CMS_MessageCreate(SECItem * cms_item)
@@ -214,7 +356,7 @@ NSSCMSSignedData *SignatureHandler::CMS_SignedDataCreate(NSSCMSMessage * cms_msg
     // tempCerts field needs to be filled for complete memory release by NSSCMSSignedData_Destroy
     signedData->tempCerts = (CERTCertificate **) gmallocn( i+1, sizeof(CERTCertificate *));
     memset(signedData->tempCerts, 0, (i+1) * sizeof(CERTCertificate *));
-    // store the adresses of these temporary certificates for future release
+    // store the addresses of these temporary certificates for future release
     for (i = 0; signedData->rawCerts[i]; ++i)
       signedData->tempCerts[i] = CERT_NewTempCertificate(CERT_GetDefaultCertDB(), signedData->rawCerts[i], nullptr, 0, 0);
 
@@ -236,12 +378,39 @@ NSSCMSSignerInfo *SignatureHandler::CMS_SignerInfoCreate(NSSCMSSignedData * cms_
   }
 }
 
-NSSCMSVerificationStatus SignatureHandler::validateSignature()
+static SignatureValidationStatus NSS_SigTranslate(NSSCMSVerificationStatus nss_code)
+{
+  switch(nss_code)
+  {
+    case NSSCMSVS_GoodSignature:
+      return SIGNATURE_VALID;
+
+    case NSSCMSVS_BadSignature:
+      return SIGNATURE_INVALID;
+
+    case NSSCMSVS_DigestMismatch:
+      return SIGNATURE_DIGEST_MISMATCH;
+
+    case NSSCMSVS_ProcessingError:
+      return SIGNATURE_DECODING_ERROR;
+
+    default:
+      return SIGNATURE_GENERIC_ERROR;
+  }
+}
+
+SignatureValidationStatus SignatureHandler::validateSignature()
 {
   unsigned char *digest_buffer = nullptr;
 
   if (!CMSSignedData)
-    return NSSCMSVS_MalformedSignature;
+    return SIGNATURE_GENERIC_ERROR;
+
+  if (!NSS_IsInitialized())
+    return SIGNATURE_GENERIC_ERROR;
+
+  if (!hash_context)
+    return SIGNATURE_GENERIC_ERROR;
 
   digest_buffer = (unsigned char *)PORT_Alloc(hash_length);
   unsigned int result_len = 0;
@@ -266,12 +435,12 @@ NSSCMSVerificationStatus SignatureHandler::validateSignature()
         && digest.len == content_info_data->len)
     {
       PORT_Free(digest_buffer);
-      return NSSCMSVS_GoodSignature;
+      return SIGNATURE_VALID;
     }
     else
     {
       PORT_Free(digest_buffer);
-      return NSSCMSVS_DigestMismatch;
+      return SIGNATURE_DIGEST_MISMATCH;
     }
 
   }
@@ -279,22 +448,21 @@ NSSCMSVerificationStatus SignatureHandler::validateSignature()
   {
 
     PORT_Free(digest_buffer);
-    return CMSSignerInfo->verificationStatus;
+    return NSS_SigTranslate(CMSSignerInfo->verificationStatus);
   }
   else
   {
     PORT_Free(digest_buffer);
-    return NSSCMSVS_GoodSignature;
+    return SIGNATURE_VALID;
   }
 }
 
-SECErrorCodes SignatureHandler::validateCertificate(time_t validation_time)
+CertificateValidationStatus SignatureHandler::validateCertificate(time_t validation_time)
 {
-  SECErrorCodes retVal;
   CERTCertificate *cert;
 
   if (!CMSSignerInfo)
-    return (SECErrorCodes) -1; //error code to avoid matching error codes defined in SECErrorCodes
+    return CERTIFICATE_GENERIC_ERROR;
 
   if ((cert = NSS_CMSSignerInfo_GetSigningCertificate(CMSSignerInfo, CERT_GetDefaultCertDB())) == nullptr)
     CMSSignerInfo->verificationStatus = NSSCMSVS_SigningCertNotFound;
@@ -312,41 +480,12 @@ SECErrorCodes SignatureHandler::validateCertificate(time_t validation_time)
   CERT_PKIXVerifyCert(cert, certificateUsageEmailSigner, inParams, nullptr,
                 CMSSignerInfo->cmsg->pwfn_arg);
 
-  retVal = (SECErrorCodes) PORT_GetError();
-
-  return retVal;
-}
-
-
-SignatureValidationStatus SignatureHandler::NSS_SigTranslate(NSSCMSVerificationStatus nss_code)
-{
-  switch(nss_code)
+  switch(PORT_GetError())
   {
-    case NSSCMSVS_GoodSignature:
-      return SIGNATURE_VALID;
+    // 0 not defined in SECErrorCodes, it means success for this purpose.
+    case 0:
+      return CERTIFICATE_TRUSTED;
 
-    case NSSCMSVS_BadSignature:
-      return SIGNATURE_INVALID;
-
-      case NSSCMSVS_DigestMismatch:
-      return SIGNATURE_DIGEST_MISMATCH;
-
-    case NSSCMSVS_ProcessingError:
-      return SIGNATURE_DECODING_ERROR;
-
-    default:
-      return SIGNATURE_GENERIC_ERROR;
-  }
-}
-
-CertificateValidationStatus SignatureHandler::NSS_CertTranslate(SECErrorCodes nss_code)
-{
-  // 0 not defined in SECErrorCodes, it means success for this purpose.
-  if (nss_code == (SECErrorCodes) 0)
-    return CERTIFICATE_TRUSTED;
-
-  switch(nss_code)
-  {
     case SEC_ERROR_UNKNOWN_ISSUER:
       return CERTIFICATE_UNKNOWN_ISSUER;
 
@@ -358,8 +497,7 @@ CertificateValidationStatus SignatureHandler::NSS_CertTranslate(SECErrorCodes ns
 
     case SEC_ERROR_EXPIRED_CERTIFICATE:
       return CERTIFICATE_EXPIRED;
-
-    default:
-      return CERTIFICATE_GENERIC_ERROR;
   }
+
+  return CERTIFICATE_GENERIC_ERROR;
 }

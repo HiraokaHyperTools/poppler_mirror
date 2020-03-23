@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2009-2010, Pino Toscano <pino@kde.org>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
+ * Copyright (C) 2019, Masamichi Hosoda <trueroad@trueroad.jp>
+ * Copyright (C) 2019, Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,9 +25,12 @@
 #include "poppler-global.h"
 #include "poppler-font.h"
 
+#include <map>
+
 namespace poppler
 {
 
+class destination;
 class document_private;
 class embedded_file;
 class page;
@@ -106,8 +111,12 @@ public:
     bool has_embedded_files() const;
     std::vector<embedded_file *> embedded_files() const;
 
-    bool save(const std::string &filename) const;
-    bool save_a_copy(const std::string &filename) const;
+    // Named destinations are bytestrings, not string.
+    // So we use std::string instead of ustring.
+    std::map<std::string, destination> create_destination_map() const;
+
+    bool save(const std::string &file_name) const;
+    bool save_a_copy(const std::string &file_name) const;
 
     static document* load_from_file(const std::string &file_name,
                                     const std::string &owner_password = std::string(),

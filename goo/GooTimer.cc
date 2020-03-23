@@ -13,12 +13,8 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
 #include "GooTimer.h"
-#include <string.h>
+#include <cstring>
 
 #define USEC_PER_SEC 1000000
 

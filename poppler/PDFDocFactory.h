@@ -6,6 +6,7 @@
 //
 // Copyright 2010 Hib Eris <hib@hiberis.nl>
 // Copyright 2010, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright 2019 Oliver Sander <oliver.sander@tu-dresden.de>
 //
 //========================================================================
 
@@ -14,7 +15,6 @@
 
 #include "PDFDoc.h"
 
-class GooList;
 class GooString;
 class PDFDocBuilder;
 
@@ -34,7 +34,7 @@ class PDFDocFactory {
 
 public:
 
-  PDFDocFactory(GooList *pdfDocBuilders = NULL);
+  PDFDocFactory(std::vector<PDFDocBuilder*> *pdfDocBuilders = nullptr);
   ~PDFDocFactory();
 
   PDFDocFactory(const PDFDocFactory &) = delete;
@@ -43,15 +43,15 @@ public:
   // Create a PDFDoc. Returns a PDFDoc. You should check this PDFDoc
   // with PDFDoc::isOk() for failures.
   // The caller is responsible for deleting ownerPassword, userPassWord and guiData.
-  PDFDoc *createPDFDoc(const GooString &uri, GooString *ownerPassword = NULL,
-      GooString *userPassword = NULL, void *guiDataA = NULL);
+  PDFDoc *createPDFDoc(const GooString &uri, GooString *ownerPassword = nullptr,
+      GooString *userPassword = nullptr, void *guiDataA = nullptr);
 
   // Extend supported URIs with the ones from the PDFDocBuilder.
   void registerPDFDocBuilder(PDFDocBuilder *pdfDocBuilder);
 
 private:
 
-  GooList *builders;
+  std::vector<PDFDocBuilder*> *builders;
 
 };
 

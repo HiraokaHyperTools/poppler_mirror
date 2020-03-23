@@ -11,7 +11,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2019 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
@@ -21,10 +21,6 @@
 
 #ifndef SPLASHPATH_H
 #define SPLASHPATH_H
-
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
 
 #include "SplashTypes.h"
 
@@ -79,7 +75,7 @@ public:
 
   SplashPath(const SplashPath&) = delete;
   SplashPath& operator=(const SplashPath&) = delete;
-  SplashPath(SplashPath&& path);
+  SplashPath(SplashPath&& path) noexcept;
 
   // Append <path> to <this>.
   void append(SplashPath *path);
@@ -99,7 +95,7 @@ public:
   // Close the last subpath, adding a line segment if necessary.  If
   // <force> is true, this adds a line segment even if the current
   // point is equal to the first point in the subpath.
-  SplashError close(GBool force = gFalse);
+  SplashError close(bool force = false);
 
   // Add a stroke adjustment hint.  The controlling segments are
   // <ctrl0> and <ctrl1> (where segments are identified by their first
@@ -111,11 +107,11 @@ public:
 
   // Get the points on the path.
   int getLength() { return length; }
-  void getPoint(int i, double *x, double *y, Guchar *f)
+  void getPoint(int i, double *x, double *y, unsigned char *f)
     { *x = pts[i].x; *y = pts[i].y; *f = flags[i]; }
 
   // Get the current point.
-  GBool getCurPt(SplashCoord *x, SplashCoord *y);
+  bool getCurPt(SplashCoord *x, SplashCoord *y);
 
   // Reserve space for at least n points
   void reserve(int n);
@@ -124,12 +120,12 @@ protected:
 
   SplashPath(SplashPath *path);
   void grow(int nPts);
-  GBool noCurrentPoint() { return curSubpath == length; }
-  GBool onePointSubpath() { return curSubpath == length - 1; }
-  GBool openSubpath() { return curSubpath < length - 1; }
+  bool noCurrentPoint() { return curSubpath == length; }
+  bool onePointSubpath() { return curSubpath == length - 1; }
+  bool openSubpath() { return curSubpath < length - 1; }
 
   SplashPathPoint *pts;		// array of points
-  Guchar *flags;		// array of flags
+  unsigned char *flags;		// array of flags
   int length, size;		// length/size of the pts and flags arrays
   int curSubpath;		// index of first point in last subpath
 

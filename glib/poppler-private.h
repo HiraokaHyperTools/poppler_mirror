@@ -24,6 +24,7 @@ struct _PopplerDocument
 {
   /*< private >*/
   GObject parent_instance;
+  std::unique_ptr<GlobalParamsIniter> initer;
   PDFDoc *doc;
 
   GList *layers;
@@ -71,6 +72,10 @@ struct _PopplerFormField
   PopplerDocument *document;
   FormWidget *widget;
   PopplerAction *action;
+  PopplerAction *field_modified_action;
+  PopplerAction *format_field_action;
+  PopplerAction *validate_field_action;
+  PopplerAction *calculate_field_action;
 };
 
 struct _PopplerAnnot
@@ -102,7 +107,7 @@ struct _PopplerStructureElement
   /*< private >*/
   GObject parent_instance;
   PopplerDocument *document;
-  StructElement *elem;
+  const StructElement *elem;
 };
 
 GList         *_poppler_document_get_layers (PopplerDocument *document);
@@ -135,6 +140,8 @@ PopplerAnnot      *_poppler_annot_line_new (Annot *annot);
 PopplerAnnot      *_poppler_annot_circle_new (Annot *annot);
 PopplerAnnot      *_poppler_annot_square_new (Annot *annot);
 
+const PDFRectangle *_poppler_annot_get_cropbox (PopplerAnnot *poppler_annot);
+
 char *_poppler_goo_string_to_utf8(const GooString *s);
 gboolean _poppler_convert_pdf_date_to_gtime (const GooString *date,
 					     time_t    *gdate);
@@ -157,5 +164,7 @@ type_name##_get_type (void)                                                     
 	}                                                                             \
 	return g_define_type_id__volatile;                                            \
 }
+
+void _poppler_error_cb (ErrorCategory category, Goffset pos, const char *message);
 
 #endif

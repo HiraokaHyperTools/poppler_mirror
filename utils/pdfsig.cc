@@ -6,35 +6,40 @@
 //
 // Copyright 2015 André Guerreiro <aguerreiro1985@gmail.com>
 // Copyright 2015 André Esser <bepandre@hotmail.com>
-// Copyright 2015, 2017, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright 2015, 2017-2019 Albert Astals Cid <aacid@kde.org>
 // Copyright 2016 Markus Kilås <digital@markuspage.com>
-// Copyright 2017 Hans-Ulrich Jüttner <huj@froreich-bioscientia.de>
-// Copyright 2017 Adrian Johnson <ajohnson@redneon.com>
+// Copyright 2017, 2019 Hans-Ulrich Jüttner <huj@froreich-bioscientia.de>
+// Copyright 2017, 2019 Adrian Johnson <ajohnson@redneon.com>
 // Copyright 2018 Chinmoy Ranjan Pradhan <chinmoyrp65@protonmail.com>
+// Copyright 2019 Alexey Pavlov <alexpux@gmail.com>
+// Copyright 2019 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright 2019 Nelson Efrain A. Cruz <neac03@gmail.com>
 //
 //========================================================================
 
 #include "config.h"
 #include <poppler-config.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <string.h>
-#include <time.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstddef>
+#include <cstring>
+#include <ctime>
 #include <hasht.h>
 #include <fstream>
-#include <libgen.h>
 #include "parseargs.h"
 #include "Object.h"
 #include "Array.h"
+#include "goo/gbasename.h"
 #include "Page.h"
 #include "PDFDoc.h"
 #include "PDFDocFactory.h"
 #include "Error.h"
 #include "GlobalParams.h"
+#include "SignatureHandler.h"
 #include "SignatureInfo.h"
 #include "Win32Console.h"
 #include "numberofcharacters.h"
+#include <libgen.h>
 
 static const char * getReadableSigState(SignatureValidationStatus sig_vs)
 {
@@ -92,12 +97,12 @@ static char *getReadableTime(time_t unix_time)
   return time_str;
 }
 
-static void dumpSignature(int sig_num, int sigCount, FormWidgetSignature *sig_widget, const char *filename)
+static bool dumpSignature(int sig_num, int sigCount, FormWidgetSignature *sig_widget, const char *filename)
 {
     const GooString *signature = sig_widget->getSignature();
     if (!signature) {
         printf("Cannot dump signature #%d\n", sig_num);
-        return;
+        return false;
     }
 
     const int sigCountLength = numberOfCharacters(sigCount);
@@ -105,23 +110,26 @@ static void dumpSignature(int sig_num, int sigCount, FormWidgetSignature *sig_wi
     // since { is the magic character to replace things we need to put it twice where
     // we don't want it to be replaced
     GooString *format = GooString::format("{{0:s}}.sig{{1:{0:d}d}}", sigCountLength);
-    char *filenameCopy = strdup(filename);
-    GooString *path = GooString::format(format->getCString(), basename(filenameCopy), sig_num);
-    free(filenameCopy);
-    printf("Signature #%d (%u bytes) => %s\n", sig_num, signature->getLength(), path->getCString());
-    std::ofstream outfile(path->getCString(), std::ofstream::binary);
-    outfile.write(signature->getCString(), signature->getLength());
+    GooString *path = GooString::format(format->c_str(), gbasename(filename).c_str(), sig_num);
+    printf("Signature #%d (%u bytes) => %s\n", sig_num, signature->getLength(), path->c_str());
+    std::ofstream outfile(path->c_str(), std::ofstream::binary);
+    outfile.write(signature->c_str(), signature->getLength());
     outfile.close();
     delete format;
     delete path;
+
+    return true;
 }
 
-static GBool printVersion = gFalse;
-static GBool printHelp = gFalse;
-static GBool dontVerifyCert = gFalse;
-static GBool dumpSignatures = gFalse;
+static GooString nssDir;
+static bool printVersion = false;
+static bool printHelp = false;
+static bool dontVerifyCert = false;
+static bool dumpSignatures = false;
 
 static const ArgDesc argDesc[] = {
+  {"-nssdir", argGooString, &nssDir,     0,
+   "path to directory of libnss3 database"},
   {"-nocert", argFlag,     &dontVerifyCert,     0,
    "don't perform certificate validation"},
   {"-dump",   argFlag,     &dumpSignatures,     0,
@@ -147,11 +155,11 @@ int main(int argc, char *argv[])
   SignatureInfo *sig_info = nullptr;
   char *time_str = nullptr;
   std::vector<FormWidgetSignature*> sig_widgets;
-  globalParams = new GlobalParams();
+  globalParams = std::make_unique<GlobalParams>();
 
   Win32Console win32Console(&argc, &argv);
   int exitCode = 99;
-  GBool ok;
+  bool ok;
 
   ok = parseArgs(argDesc, &argc, argv);
 
@@ -169,6 +177,8 @@ int main(int argc, char *argv[])
 
   fileName = new GooString(argv[argc - 1]);
 
+  SignatureHandler::setNSSDir(nssDir);
+
   // open PDF file
   doc = PDFDocFactory().createPDFDoc(*fileName, nullptr, nullptr);
 
@@ -182,16 +192,20 @@ int main(int argc, char *argv[])
 
   if (sigCount >= 1) {
     if (dumpSignatures) {
+      exitCode = 0;
       printf("Dumping Signatures: %u\n", sigCount);
       for (unsigned int i = 0; i < sigCount; i++) {
-        dumpSignature(i, sigCount, sig_widgets.at(i), fileName->getCString());
+        const bool dumpingOk = dumpSignature(i, sigCount, sig_widgets.at(i), fileName->c_str());
+        if (!dumpingOk) {
+          exitCode = 3;
+        }
       }
       goto end;
     } else {
-      printf("Digital Signature Info of: %s\n", fileName->getCString());
+      printf("Digital Signature Info of: %s\n", fileName->c_str());
     }
   } else {
-    printf("File '%s' does not contain any signatures\n", fileName->getCString());
+    printf("File '%s' does not contain any signatures\n", fileName->c_str());
     exitCode = 2;
     goto end;
   }
@@ -251,13 +265,12 @@ int main(int argc, char *argv[])
              ranges[0], ranges[1], ranges[2], ranges[3]);
       Goffset checked_file_size;
       GooString* signature = sig_widgets.at(i)->getCheckedSignature(&checked_file_size);
-      if (signature && checked_file_size == ranges[3])
-      {
+      if (signature && checked_file_size == ranges[3]) {
         printf("  - Total document signed\n");
-        delete signature;
-      }
-      else
+      } else {
         printf("  - Not total document signed\n");
+      }
+      delete signature;
     }
     printf("  - Signature Validation: %s\n", getReadableSigState(sig_info->getSignatureValStatus()));
     gfree(time_str);
@@ -270,7 +283,6 @@ int main(int argc, char *argv[])
   exitCode = 0;
 
 end:
-  delete globalParams;
   delete fileName;
   delete doc;
 

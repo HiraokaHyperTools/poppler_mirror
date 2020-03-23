@@ -1,6 +1,6 @@
 /* PageTransition.cc
  * Copyright (C) 2005, Net Integration Technologies, Inc.
- * Copyright (C) 2010, 2017, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2010, 2017, 2020, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2015, Arseniy Lartsev <arseniy@alumni.chalmers.se>
  *
@@ -19,10 +19,6 @@
  * Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
 #include "PageTransition.h"
 
 //------------------------------------------------------------------------
@@ -39,11 +35,10 @@ PageTransition::PageTransition (Object *trans) {
   direction = transitionInward;
   angle = 0;
   scale = 1.0;
-  rectangular = gFalse;
-  ok = gTrue;
+  ok = true;
 
   if (!trans || !trans->isDict ()) {
-    ok = gFalse;
+    ok = false;
     return;
   }
 
@@ -127,10 +122,7 @@ PageTransition::PageTransition (Object *trans) {
   }
 
   // get rectangular
-  obj = dict->lookup("B");
-  if (obj.isBool()) {
-    rectangular = obj.getBool();
-  }
+  rectangular = dict->lookup("B").getBoolWithDefaultValue(false);
 }
 
 PageTransition::~PageTransition()

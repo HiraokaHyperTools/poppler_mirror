@@ -16,9 +16,10 @@
 // Copyright (C) 2008 Koji Otani <sho@bbr.jp>
 // Copyright (C) 2012, 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2012 Hib Eris <hib@hiberis.nl>
-// Copyright (C) 2016, 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2016, 2018-2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2016 Jason Crain <jason@aquaticape.us>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
+// Copyright (C) 2018 Nelson Benítez León <nbenitezl@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -27,6 +28,8 @@
 
 #include "goo/gmem.h"
 #include "PDFDocEncoding.h"
+#include "GlobalParams.h"
+#include "UnicodeMap.h"
 #include "UTF.h"
 #include "UnicodeMapFuncs.h"
 #include <algorithm>
@@ -39,7 +42,7 @@ bool UnicodeIsValid(Unicode ucs4)
     ((ucs4 & 0xfffe) != 0xfffe);
 }
 
-int UTF16toUCS4(const Unicode *utf16, int utf16Len, Unicode **ucs4)
+int UTF16toUCS4(const Unicode *utf16, int utf16Len, Unicode **ucs4_out)
 {
   int i, n, len;
   Unicode *u;
@@ -53,7 +56,7 @@ int UTF16toUCS4(const Unicode *utf16, int utf16Len, Unicode **ucs4)
     }
     len++;
   }
-  if (ucs4 == nullptr)
+  if (ucs4_out == nullptr)
     return len;
 
   u = (Unicode*)gmallocn(len, sizeof(Unicode));
@@ -82,7 +85,7 @@ int UTF16toUCS4(const Unicode *utf16, int utf16Len, Unicode **ucs4)
     }
     n++;
   }
-  *ucs4 = u;
+  *ucs4_out = u;
   return len;
 }
 
@@ -93,7 +96,7 @@ int TextStringToUCS4(const GooString *textStr, Unicode **ucs4)
   Unicode *u;
 
   len = textStr->getLength();
-  s = textStr->getCString();
+  s = textStr->c_str();
   if (len == 0) {
     *ucs4 = nullptr;
     return 0;
@@ -415,4 +418,51 @@ char *utf16ToUtf8(const uint16_t *utf16, int *len)
   char *utf8 = (char*)gmalloc(n + 1);
   utf16ToUtf8(utf16, utf8);
   return utf8;
+}
+
+void unicodeToAscii7(const Unicode *in, int len, Unicode **ucs4_out,
+                     int *out_len, const int *in_idx, int **indices)
+{
+  const UnicodeMap *uMap = globalParams->getUnicodeMap("ASCII7");
+  int *idx = nullptr;
+
+  if (!len) {
+    *ucs4_out = nullptr;
+    *out_len = 0;
+    return;
+  }
+
+  if (indices) {
+    if (!in_idx)
+      indices = nullptr;
+    else
+      idx = (int *) gmallocn(len * 8 + 1, sizeof(int));
+  }
+
+  GooString gstr;
+
+  char buf[8]; // 8 is enough for mapping an unicode char to a string
+  int i, n, k;
+
+  for (i = k = 0; i < len; ++i) {
+     n = uMap->mapUnicode(in[i], buf, sizeof(buf));
+     if (!n) {
+       // the Unicode char could not be converted to ascii7 counterpart
+       // so just fill with a non-printable ascii char
+       buf[0] = 31;
+       n = 1;
+     }
+     gstr.append(buf, n);
+     if (indices) {
+       for (; n > 0; n--)
+         idx[k++] = in_idx[i];
+     }
+  }
+
+  *out_len = TextStringToUCS4(&gstr, ucs4_out);
+
+  if (indices) {
+    idx[k] = in_idx[len];
+    *indices = idx;
+  }
 }

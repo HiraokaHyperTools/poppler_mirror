@@ -16,6 +16,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2019 Volker Krause <vkrause@kde.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -24,12 +25,6 @@
 
 #ifndef JARITHMETICDECODER_H
 #define JARITHMETICDECODER_H
-
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
-
-#include "goo/gtypes.h"
 
 class Stream;
 
@@ -48,11 +43,11 @@ public:
   void reset();
   int getContextSize() { return contextSize; }
   void copyFrom(JArithmeticDecoderStats *stats);
-  void setEntry(Guint cx, int i, int mps);
+  void setEntry(unsigned int cx, int i, int mps);
 
 private:
 
-  Guchar *cxTab;		// cxTab[cx] = (i[cx] << 1) + mps[cx]
+  unsigned char *cxTab;		// cxTab[cx] = (i[cx] << 1) + mps[cx]
   int contextSize;
 
   friend class JArithmeticDecoder;
@@ -71,9 +66,9 @@ public:
   JArithmeticDecoder& operator=(const JArithmeticDecoder &) = delete;
 
   void setStream(Stream *strA)
-    { str = strA; dataLen = 0; limitStream = gFalse; }
+    { str = strA; dataLen = 0; limitStream = false; }
   void setStream(Stream *strA, int dataLenA)
-    { str = strA; dataLen = dataLenA; limitStream = gTrue; }
+    { str = strA; dataLen = dataLenA; limitStream = true; }
 
   // Start decoding on a new stream.  This fills the byte buffers and
   // runs INITDEC.
@@ -89,41 +84,41 @@ public:
   void cleanup();
 
   // Decode one bit.
-  int decodeBit(Guint context, JArithmeticDecoderStats *stats);
+  int decodeBit(unsigned int context, JArithmeticDecoderStats *stats);
 
   // Decode eight bits.
-  int decodeByte(Guint context, JArithmeticDecoderStats *stats);
+  int decodeByte(unsigned int context, JArithmeticDecoderStats *stats);
 
   // Returns false for OOB, otherwise sets *<x> and returns true.
-  GBool decodeInt(int *x, JArithmeticDecoderStats *stats);
+  bool decodeInt(int *x, JArithmeticDecoderStats *stats);
 
-  Guint decodeIAID(Guint codeLen,
+  unsigned int decodeIAID(unsigned int codeLen,
 		   JArithmeticDecoderStats *stats);
 
   void resetByteCounter() { nBytesRead = 0; }
-  Guint getByteCounter() { return nBytesRead; }
+  unsigned int getByteCounter() { return nBytesRead; }
 
 private:
 
-  Guint readByte();
+  unsigned int readByte();
   int decodeIntBit(JArithmeticDecoderStats *stats);
   void byteIn();
 
-  static Guint qeTab[47];
-  static int nmpsTab[47];
-  static int nlpsTab[47];
-  static int switchTab[47];
+  static const unsigned int qeTab[47];
+  static const int nmpsTab[47];
+  static const int nlpsTab[47];
+  static const int switchTab[47];
 
-  Guint buf0, buf1;
-  Guint c, a;
+  unsigned int buf0, buf1;
+  unsigned int c, a;
   int ct;
 
-  Guint prev;			// for the integer decoder
+  unsigned int prev;			// for the integer decoder
 
   Stream *str;
-  Guint nBytesRead;
+  unsigned int nBytesRead;
   int dataLen;
-  GBool limitStream;
+  bool limitStream;
 };
 
 #endif

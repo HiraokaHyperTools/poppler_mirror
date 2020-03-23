@@ -4,14 +4,11 @@
 //
 // Copyright 2005 Jonathan Blandford <jrb@redhat.com>
 // Copyright 2018 Adam Reichold <adam.reichold@t-online.de>
+// Copyright 2019 Albert Astals Cid <aacid@kde.org>
 //
 //========================================================================
 
 #include <config.h>
-
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
 
 #include <goo/gmem.h>
 #include <goo/GooTimer.h>
@@ -45,11 +42,11 @@ enum {
 class PdfInspector {
 public:
 
-  PdfInspector(void);
+  PdfInspector();
 
   void set_file_name (const char *file_name);
   void load (const char *file_name);
-  void run (void);
+  void run ();
   void error_dialog (const char *error_message);
   void analyze_page (int page);
 
@@ -66,14 +63,14 @@ private:
 
 
 
-PdfInspector::PdfInspector(void)
+PdfInspector::PdfInspector()
 {
   GtkWidget *widget;
   GError* error = nullptr;
   
   builder = gtk_builder_new ();
 
-  if (!gtk_builder_add_from_file (builder, "./pdf-inspector.ui", &error))
+  if (!gtk_builder_add_from_file (builder, SRC_DIR "/pdf-inspector.ui", &error))
   {
     g_warning ("Couldn't load builder file: %s", error->message);
     g_error_free (error);
@@ -131,7 +128,7 @@ PdfInspector::PdfInspector(void)
     }
   doc = nullptr;
   output = new CairoOutputDev();
-  output->setPrinting (gFalse);
+  output->setPrinting (false);
 
   // set up initial widgets
   load (nullptr);
@@ -232,7 +229,7 @@ PdfInspector::analyze_page (int page)
   cairo_surface_destroy (surface);
   output->setCairo (cr);
   cairo_destroy (cr);
-  doc->displayPage (output, page + 1, 72, 72, 0, gFalse, gTrue, gFalse);
+  doc->displayPage (output, page + 1, 72, 72, 0, false, true, false);
   output->setCairo (nullptr);
 
   // Total time;
@@ -337,7 +334,7 @@ main (int argc, char *argv [])
   
   gtk_init (&argc, &argv);
   
-  globalParams = new GlobalParams();
+  globalParams = std::make_unique<GlobalParams>();
   globalParams->setProfileCommands (true);
   globalParams->setPrintCommands (true);
 
@@ -357,7 +354,6 @@ main (int argc, char *argv [])
   inspector->run ();
 
   delete inspector;
-  delete globalParams;
   
   return 0;
 }

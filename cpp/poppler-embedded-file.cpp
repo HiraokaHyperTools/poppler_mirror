@@ -18,6 +18,9 @@
  * Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+/**
+ \file poppler-embedded-file.h
+ */
 #include "poppler-embedded-file.h"
 
 #include "poppler-embedded-file-private.h"
@@ -80,7 +83,7 @@ bool embedded_file::is_valid() const
 std::string embedded_file::name() const
 {
     const GooString *goo = d->file_spec->getFileName();
-    return goo ? std::string(goo->getCString()) : std::string();
+    return goo ? std::string(goo->c_str()) : std::string();
 }
 
 /**
@@ -132,7 +135,7 @@ byte_array embedded_file::checksum() const
     if (!cs) {
         return byte_array();
     }
-    const char *ccs = cs->getCString();
+    const char *ccs = cs->c_str();
     byte_array data(cs->getLength());
     for (int i = 0; i < cs->getLength(); ++i) {
         data[i] = ccs[i];
@@ -146,7 +149,7 @@ byte_array embedded_file::checksum() const
 std::string embedded_file::mime_type() const
 {
     const GooString *goo = d->file_spec->getEmbeddedFile()->mimeType();
-    return goo ? std::string(goo->getCString()) : std::string();
+    return goo ? std::string(goo->c_str()) : std::string();
 }
 
 /**

@@ -23,8 +23,9 @@
 // Copyright (C) 2010-2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2015 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
 // Copyright (C) 2016 Jason Crain <jason@aquaticape.us>
-// Copyright (C) 2018 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2019 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
+// Copyright (C) 2020 Michal <sudolskym@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -34,11 +35,6 @@
 #ifndef CAIROOUTPUTDEV_H
 #define CAIROOUTPUTDEV_H
 
-#ifdef USE_GCC_PRAGMAS
-#pragma interface
-#endif
-
-#include "goo/gtypes.h"
 #include <cairo-ft.h>
 #include "OutputDev.h"
 #include "TextOutputDev.h"
@@ -96,41 +92,41 @@ public:
   CairoOutputDev();
 
   // Destructor.
-  virtual ~CairoOutputDev();
+  ~CairoOutputDev() override;
 
   //----- get info about output device
 
   // Does this device use upside-down coordinates?
   // (Upside-down means (0,0) is the top left corner of the page.)
-  GBool upsideDown() override { return gTrue; }
+  bool upsideDown() override { return true; }
 
   // Does this device use drawChar() or drawString()?
-  GBool useDrawChar() override { return gTrue; }
+  bool useDrawChar() override { return true; }
 
   // Does this device use tilingPatternFill()?  If this returns false,
   // tiling pattern fills will be reduced to a series of other drawing
   // operations.
-  GBool useTilingPatternFill() override { return gTrue; }
+  bool useTilingPatternFill() override { return true; }
 
   // Does this device use functionShadedFill(), axialShadedFill(), and
   // radialShadedFill()?  If this returns false, these shaded fills
   // will be reduced to a series of other drawing operations.
 #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 12, 0)
-  GBool useShadedFills(int type) override { return type <= 7; }
+  bool useShadedFills(int type) override { return type <= 7; }
 #else
-  GBool useShadedFills(int type) override { return type > 1 && type < 4; }
+  bool useShadedFills(int type) override { return type > 1 && type < 4; }
 #endif
 
   // Does this device use FillColorStop()?
-  GBool useFillColorStop() override { return gTrue; }
+  bool useFillColorStop() override { return true; }
 
   // Does this device use beginType3Char/endType3Char?  Otherwise,
   // text in Type 3 fonts will be drawn with drawChar/drawString.
-  GBool interpretType3Chars() override { return gFalse; }
+  bool interpretType3Chars() override { return false; }
 
   // Does this device need to clip pages to the crop box even when the
   // box is the crop box?
-  GBool needClipToCropBox() override { return gTrue; }
+  bool needClipToCropBox() override { return true; }
 
   //----- initialization and control
 
@@ -146,7 +142,7 @@ public:
 
   //----- update graphics state
   void updateAll(GfxState *state) override;
-  void setDefaultCTM(double *ctm) override;
+  void setDefaultCTM(const double *ctm) override;
   void updateCTM(GfxState *state, double m11, double m12,
 		 double m21, double m22, double m31, double m32) override;
   void updateLineDash(GfxState *state) override;
@@ -170,21 +166,21 @@ public:
   void fill(GfxState *state) override;
   void eoFill(GfxState *state) override;
   void clipToStrokePath(GfxState *state) override;
-  GBool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, Object *str,
-			  double *pmat, int paintType, int tilingType, Dict *resDict,
-			  double *mat, double *bbox,
+  bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, Object *str,
+			  const double *pmat, int paintType, int tilingType, Dict *resDict,
+			  const double *mat, const double *bbox,
 			  int x0, int y0, int x1, int y1,
 			  double xStep, double yStep) override;
 #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 12, 0)
-  GBool functionShadedFill(GfxState *state, GfxFunctionShading *shading) override;
+  bool functionShadedFill(GfxState *state, GfxFunctionShading *shading) override;
 #endif
-  GBool axialShadedFill(GfxState *state, GfxAxialShading *shading, double tMin, double tMax) override;
-  GBool axialShadedSupportExtend(GfxState *state, GfxAxialShading *shading) override;
-  GBool radialShadedFill(GfxState *state, GfxRadialShading *shading, double sMin, double sMax) override;
-  GBool radialShadedSupportExtend(GfxState *state, GfxRadialShading *shading) override;
+  bool axialShadedFill(GfxState *state, GfxAxialShading *shading, double tMin, double tMax) override;
+  bool axialShadedSupportExtend(GfxState *state, GfxAxialShading *shading) override;
+  bool radialShadedFill(GfxState *state, GfxRadialShading *shading, double sMin, double sMax) override;
+  bool radialShadedSupportExtend(GfxState *state, GfxRadialShading *shading) override;
 #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 12, 0)
-  GBool gouraudTriangleShadedFill(GfxState *state, GfxGouraudTriangleShading *shading) override;
-  GBool patchMeshShadedFill(GfxState *state, GfxPatchMeshShading *shading) override;
+  bool gouraudTriangleShadedFill(GfxState *state, GfxGouraudTriangleShading *shading) override;
+  bool patchMeshShadedFill(GfxState *state, GfxPatchMeshShading *shading) override;
 #endif
 
   //----- path clipping
@@ -197,62 +193,62 @@ public:
   void drawChar(GfxState *state, double x, double y,
 		double dx, double dy,
 		double originX, double originY,
-		CharCode code, int nBytes, Unicode *u, int uLen) override;
+		CharCode code, int nBytes, const Unicode *u, int uLen) override;
   void beginActualText(GfxState *state, const GooString *text) override;
   void endActualText(GfxState *state) override;
 
-  GBool beginType3Char(GfxState *state, double x, double y,
+  bool beginType3Char(GfxState *state, double x, double y,
 		       double dx, double dy,
-		       CharCode code, Unicode *u, int uLen) override;
+		       CharCode code, const Unicode *u, int uLen) override;
   void endType3Char(GfxState *state) override;
   void beginTextObject(GfxState *state) override;
   void endTextObject(GfxState *state) override;
 
   //----- image drawing
   void drawImageMask(GfxState *state, Object *ref, Stream *str,
-		     int width, int height, GBool invert, GBool interpolate,
-		     GBool inlineImg) override;
+		     int width, int height, bool invert, bool interpolate,
+		     bool inlineImg) override;
   void setSoftMaskFromImageMask(GfxState *state,
 				Object *ref, Stream *str,
-				int width, int height, GBool invert,
-				GBool inlineImg, double *baseMatrix) override;
+				int width, int height, bool invert,
+				bool inlineImg, double *baseMatrix) override;
   void unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix) override;
   void drawImageMaskPrescaled(GfxState *state, Object *ref, Stream *str,
-			      int width, int height, GBool invert, GBool interpolate,
-			      GBool inlineImg);
+			      int width, int height, bool invert, bool interpolate,
+			      bool inlineImg);
   void drawImageMaskRegular(GfxState *state, Object *ref, Stream *str,
-			    int width, int height, GBool invert, GBool interpolate,
-			    GBool inlineImg);
+			    int width, int height, bool invert, bool interpolate,
+			    bool inlineImg);
 
   void drawImage(GfxState *state, Object *ref, Stream *str,
 		 int width, int height, GfxImageColorMap *colorMap,
-		 GBool interpolate, int *maskColors, GBool inlineImg) override;
+		 bool interpolate, const int *maskColors, bool inlineImg) override;
   void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str,
 			   int width, int height,
 			   GfxImageColorMap *colorMap,
-			   GBool interpolate,
+			   bool interpolate,
 			   Stream *maskStr,
 			   int maskWidth, int maskHeight,
 			   GfxImageColorMap *maskColorMap,
-			   GBool maskInterpolate) override;
+			   bool maskInterpolate) override;
 
   void drawMaskedImage(GfxState *state, Object *ref, Stream *str,
 		       int width, int height,
 		       GfxImageColorMap *colorMap,
-		       GBool interpolate,
+		       bool interpolate,
 		       Stream *maskStr,
 		       int maskWidth, int maskHeight,
-		       GBool maskInvert, GBool maskInterpolate) override;
+		       bool maskInvert, bool maskInterpolate) override;
 
   //----- transparency groups and soft masks
-  void beginTransparencyGroup(GfxState * /*state*/, double * /*bbox*/,
+  void beginTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/,
                                       GfxColorSpace * /*blendingColorSpace*/,
-                                      GBool /*isolated*/, GBool /*knockout*/,
-                                      GBool /*forSoftMask*/) override;
+                                      bool /*isolated*/, bool /*knockout*/,
+                                      bool /*forSoftMask*/) override;
   void endTransparencyGroup(GfxState * /*state*/) override;
   void popTransparencyGroup();
-  void paintTransparencyGroup(GfxState * /*state*/, double * /*bbox*/) override;
-  void setSoftMask(GfxState * /*state*/, double * /*bbox*/, GBool /*alpha*/,
+  void paintTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/) override;
+  void setSoftMask(GfxState * /*state*/, const double * /*bbox*/, bool /*alpha*/,
 		   Function * /*transferFunc*/, GfxColor * /*backdropColor*/) override;
   void clearSoftMask(GfxState * /*state*/) override;
 
@@ -264,38 +260,38 @@ public:
   //----- special access
   
   // Called to indicate that a new PDF document has been loaded.
-  void startDoc(PDFDoc *docA, CairoFontEngine *fontEngine = NULL);
+  void startDoc(PDFDoc *docA, CairoFontEngine *fontEngine = nullptr);
  
-  GBool isReverseVideo() { return gFalse; }
+  bool isReverseVideo() { return false; }
   
   void setCairo (cairo_t *cr);
   void setTextPage (TextPage *text);
-  void setPrinting (GBool printingA) { printing = printingA; needFontUpdate = gTrue; }
+  void setPrinting (bool printingA) { printing = printingA; needFontUpdate = true; }
   void setAntialias(cairo_antialias_t antialias);
 
-  void setInType3Char(GBool inType3CharA) { inType3Char = inType3CharA; }
+  void setInType3Char(bool inType3CharA) { inType3Char = inType3CharA; }
   void getType3GlyphWidth (double *wx, double *wy) { *wx = t3_glyph_wx; *wy = t3_glyph_wy; }
-  GBool hasType3GlyphBBox () { return t3_glyph_has_bbox; }
+  bool hasType3GlyphBBox () { return t3_glyph_has_bbox; }
   double *getType3GlyphBBox () { return t3_glyph_bbox; }
 
 protected:
-  void doPath(cairo_t *cairo, GfxState *state, GfxPath *path);
+  void doPath(cairo_t *cairo, GfxState *state, const GfxPath *path);
   cairo_surface_t *downscaleSurface(cairo_surface_t *orig_surface);
   void getScaledSize(const cairo_matrix_t *matrix,
                      int orig_width, int orig_height,
 		     int *scaledWidth, int *scaledHeight);
   cairo_filter_t getFilterForSurface(cairo_surface_t *image,
-				     GBool interpolate);
-  GBool getStreamData (Stream *str, char **buffer, int *length);
+				     bool interpolate);
+  bool getStreamData (Stream *str, char **buffer, int *length);
   void setMimeData(GfxState *state, Stream *str, Object *ref,
 		   GfxImageColorMap *colorMap, cairo_surface_t *image, int height);
   void fillToStrokePathClip(GfxState *state);
-  void alignStrokeCoords(GfxSubpath *subpath, int i, double *x, double *y);
+  void alignStrokeCoords(const GfxSubpath *subpath, int i, double *x, double *y);
 #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 14, 0)
-  GBool setMimeDataForJBIG2Globals (Stream *str, cairo_surface_t *image);
+  bool setMimeDataForJBIG2Globals (Stream *str, cairo_surface_t *image);
 #endif
 #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 15, 10)
-  GBool setMimeDataForCCITTParams(Stream  *str, cairo_surface_t *image, int height);
+  bool setMimeDataForCCITTParams(Stream  *str, cairo_surface_t *image, int height);
 #endif
   static void setContextAntialias(cairo_t *cr, cairo_antialias_t antialias);
 
@@ -303,9 +299,9 @@ protected:
   cairo_pattern_t *fill_pattern, *stroke_pattern;
   double fill_opacity;
   double stroke_opacity;
-  GBool stroke_adjust;
-  GBool adjusted_stroke_width;
-  GBool align_stroke_coords;
+  bool stroke_adjust;
+  bool adjusted_stroke_width;
+  bool align_stroke_coords;
   CairoFont *currentFont;
   XRef *xref;
 
@@ -325,17 +321,17 @@ protected:
   PDFDoc *doc;			// the current document
 
   static FT_Library ft_lib;
-  static GBool ft_lib_initialized;
+  static std::once_flag ft_lib_once_flag;
 
   CairoFontEngine *fontEngine;
-  GBool fontEngine_owner;
+  bool fontEngine_owner;
 
   cairo_t *cairo;
   cairo_matrix_t orig_matrix;
-  GBool needFontUpdate;                // set when the font needs to be updated
-  GBool printing;
-  GBool use_show_text_glyphs;
-  GBool text_matrix_valid;
+  bool needFontUpdate;                // set when the font needs to be updated
+  bool printing;
+  bool use_show_text_glyphs;
+  bool text_matrix_valid;
   cairo_glyph_t *glyphs;
   int glyphCount;
   cairo_text_cluster_t *clusters;
@@ -344,15 +340,15 @@ protected:
   int utf8Count;
   int utf8Max;
   cairo_path_t *textClipPath;
-  GBool inUncoloredPattern;     // inside a uncolored pattern (PaintType = 2)
-  GBool inType3Char;		// inside a Type 3 CharProc
+  bool inUncoloredPattern;     // inside a uncolored pattern (PaintType = 2)
+  bool inType3Char;		// inside a Type 3 CharProc
   double t3_glyph_wx, t3_glyph_wy;
-  GBool t3_glyph_has_bbox;
+  bool t3_glyph_has_bbox;
   double t3_glyph_bbox[4];
   cairo_antialias_t antialias;
-  GBool prescaleImages;
+  bool prescaleImages;
 
-  TextPage *text;		// text for the current page
+  TextPage *textPage;		// text for the current page
   ActualText *actualText;
 
   cairo_pattern_t *group;
@@ -362,7 +358,7 @@ protected:
   cairo_t *cairo_shape;
   int knockoutCount;
   struct ColorSpaceStack {
-    GBool knockout;
+    bool knockout;
     GfxColorSpace *cs;
     cairo_matrix_t group_matrix;
     struct ColorSpaceStack *next;
@@ -388,40 +384,40 @@ public:
   CairoImageOutputDev();
 
   // Destructor.
-  virtual ~CairoImageOutputDev();
+  ~CairoImageOutputDev() override;
 
   //----- get info about output device
 
   // Does this device use upside-down coordinates?
   // (Upside-down means (0,0) is the top left corner of the page.)
-  GBool upsideDown() override { return gTrue; }
+  bool upsideDown() override { return true; }
 
   // Does this device use drawChar() or drawString()?
-  GBool useDrawChar() override { return gFalse; }
+  bool useDrawChar() override { return false; }
 
   // Does this device use tilingPatternFill()?  If this returns false,
   // tiling pattern fills will be reduced to a series of other drawing
   // operations.
-  GBool useTilingPatternFill() override { return gTrue; }
+  bool useTilingPatternFill() override { return true; }
 
   // Does this device use functionShadedFill(), axialShadedFill(), and
   // radialShadedFill()?  If this returns false, these shaded fills
   // will be reduced to a series of other drawing operations.
 #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 11, 2)
-  GBool useShadedFills(int type) override { return type <= 7; }
+  bool useShadedFills(int type) override { return type <= 7; }
 #else
-  GBool useShadedFills(int type) override { return type < 4; }
+  bool useShadedFills(int type) override { return type < 4; }
 #endif
 
   // Does this device use FillColorStop()?
-  GBool useFillColorStop() override { return gFalse; }
+  bool useFillColorStop() override { return false; }
 
   // Does this device use beginType3Char/endType3Char?  Otherwise,
   // text in Type 3 fonts will be drawn with drawChar/drawString.
-  GBool interpretType3Chars() override { return gFalse; }
+  bool interpretType3Chars() override { return false; }
 
   // Does this device need non-text content?
-  GBool needNonText() override { return gTrue; }
+  bool needNonText() override { return true; }
 
   //----- save/restore graphics state
   void saveState(GfxState *state) override { }
@@ -429,7 +425,7 @@ public:
 
   //----- update graphics state
   void updateAll(GfxState *state) override { }
-  void setDefaultCTM(double *ctm) override { }
+  void setDefaultCTM(const double *ctm) override { }
   void updateCTM(GfxState *state, double m11, double m12,
 		 double m21, double m22, double m31, double m32) override { }
   void updateLineDash(GfxState *state) override { }
@@ -452,17 +448,17 @@ public:
   void fill(GfxState *state) override { }
   void eoFill(GfxState *state) override { }
   void clipToStrokePath(GfxState *state) override { }
-  GBool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, Object *str,
-			  double *pmat, int paintType, int tilingType, Dict *resDict,
-			  double *mat, double *bbox,
+  bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, Object *str,
+			  const double *pmat, int paintType, int tilingType, Dict *resDict,
+			  const double *mat, const double *bbox,
 			  int x0, int y0, int x1, int y1,
-			  double xStep, double yStep) override { return gTrue; }
-  GBool axialShadedFill(GfxState *state,
+			  double xStep, double yStep) override { return true; }
+  bool axialShadedFill(GfxState *state,
 			GfxAxialShading *shading,
-			double tMin, double tMax) override { return gTrue; }
-  GBool radialShadedFill(GfxState *state,
+			double tMin, double tMax) override { return true; }
+  bool radialShadedFill(GfxState *state,
 			 GfxRadialShading *shading,
-			 double sMin, double sMax) override { return gTrue; }
+			 double sMin, double sMax) override { return true; }
 
   //----- path clipping
   void clip(GfxState *state) override { }
@@ -470,46 +466,46 @@ public:
 
   //----- image drawing
   void drawImageMask(GfxState *state, Object *ref, Stream *str,
-		     int width, int height, GBool invert,
-		     GBool interpolate, GBool inlineImg) override;
+		     int width, int height, bool invert,
+		     bool interpolate, bool inlineImg) override;
   void drawImage(GfxState *state, Object *ref, Stream *str,
 		 int width, int height, GfxImageColorMap *colorMap,
-		 GBool interpolate, int *maskColors, GBool inlineImg) override;
+		 bool interpolate, const int *maskColors, bool inlineImg) override;
   void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str,
 			   int width, int height,
 			   GfxImageColorMap *colorMap,
-			   GBool interpolate,
+			   bool interpolate,
 			   Stream *maskStr,
 			   int maskWidth, int maskHeight,
 			   GfxImageColorMap *maskColorMap,
-			   GBool maskInterpolate) override;
+			   bool maskInterpolate) override;
   void drawMaskedImage(GfxState *state, Object *ref, Stream *str,
 		       int width, int height,
 		       GfxImageColorMap *colorMap,
-		       GBool interpolate,
+		       bool interpolate,
 		       Stream *maskStr,
 		       int maskWidth, int maskHeight,
-		       GBool maskInvert, GBool maskInterpolate) override;
+		       bool maskInvert, bool maskInterpolate) override;
   void setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str,
-				int width, int height, GBool invert,
-				GBool inlineImg, double *baseMatrix) override;
+				int width, int height, bool invert,
+				bool inlineImg, double *baseMatrix) override;
   void unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix) override {}
 
 
   //----- transparency groups and soft masks
-  void beginTransparencyGroup(GfxState * /*state*/, double * /*bbox*/,
+  void beginTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/,
 			      GfxColorSpace * /*blendingColorSpace*/,
-			      GBool /*isolated*/, GBool /*knockout*/,
-			      GBool /*forSoftMask*/) override {}
+			      bool /*isolated*/, bool /*knockout*/,
+			      bool /*forSoftMask*/) override {}
   void endTransparencyGroup(GfxState * /*state*/) override {}
-  void paintTransparencyGroup(GfxState * /*state*/, double * /*bbox*/) override {}
-  void setSoftMask(GfxState * /*state*/, double * /*bbox*/, GBool /*alpha*/,
+  void paintTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/) override {}
+  void setSoftMask(GfxState * /*state*/, const double * /*bbox*/, bool /*alpha*/,
 		   Function * /*transferFunc*/, GfxColor * /*backdropColor*/) override {}
   void clearSoftMask(GfxState * /*state*/) override {}
 
   //----- Image list
   // By default images are not rendred
-  void setImageDrawDecideCbk(GBool (*cbk)(int img_id, void *data),
+  void setImageDrawDecideCbk(bool (*cbk)(int img_id, void *data),
 			     void *data) { imgDrawCbk = cbk; imgDrawCbkData = data; }
   // Iterate through list of images.
   int getNumImages() const { return numImages; }
@@ -523,7 +519,7 @@ private:
   CairoImage **images;
   int numImages;
   int size;
-  GBool (*imgDrawCbk)(int img_id, void *data);
+  bool (*imgDrawCbk)(int img_id, void *data);
   void *imgDrawCbkData;
 };
 

@@ -3,10 +3,11 @@
  * Copyright (C) 2007, Brad Hards <bradh@kde.org>
  * Copyright (C) 2008, 2014, Pino Toscano <pino@kde.org>
  * Copyright (C) 2008, Carlos Garcia Campos <carlosgc@gnome.org>
- * Copyright (C) 2015-2018, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2015-2019, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2017, Hubert Figuière <hub@figuiere.net>
  * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
  * Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+ * Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,20 +39,22 @@
 
 namespace Poppler
 {
+  // TODO use qAsConst when we can depend on Qt 5.7
+  //      or std::as_const when we can depend on C++17
+  template <class T> constexpr std::add_const_t<T>& as_const(T& t) noexcept { return t; }
 
   RadioButtonGroup::RadioButtonGroup( OptContentModelPrivate *ocModel, Array *rbarray )
   {
     itemsInGroup.reserve(rbarray->getLength());
     for (int i = 0; i < rbarray->getLength(); ++i) {
-      Object ref = rbarray->getNF( i );
+      const Object &ref = rbarray->getNF( i );
       if ( ! ref.isRef() ) {
 	qDebug() << "expected ref, but got:" << ref.getType();
       }
       OptContentItem *item = ocModel->itemFromRef( QString::number(ref.getRefNum() ) );
       itemsInGroup.append( item );
     }
-    for (int i = 0; i < itemsInGroup.size(); ++i) {
-      OptContentItem *item = itemsInGroup.at(i);
+    for (OptContentItem *item : as_const(itemsInGroup)) {
       item->appendRBGroup( this );
     }
   }
@@ -63,8 +66,7 @@ namespace Poppler
   QSet<OptContentItem *> RadioButtonGroup::setItemOn( OptContentItem *itemToSetOn )
   {
     QSet<OptContentItem *> changedItems;
-    for (int i = 0; i < itemsInGroup.size(); ++i) {
-      OptContentItem *thisItem = itemsInGroup.at(i);
+    for (OptContentItem *thisItem : as_const(itemsInGroup)) {
       if (thisItem != itemToSetOn) {
         QSet<OptContentItem *> newChangedItems;
         thisItem->setState(OptContentItem::Off, false /*obeyRadioGroups*/, newChangedItems);
@@ -130,14 +132,15 @@ namespace Poppler
       child->m_enabled = state == OptContentItem::On;
       child->m_stateBackup = oldState;
     }
-    if (!m_group || !obeyRadioGroups) {
+    if (!m_group) {
       return;
     }
     if ( state == OptContentItem::On ) {
       m_group->setState( OptionalContentGroup::On );
-      for (int i = 0; i < m_rbGroups.size(); ++i) {
-        RadioButtonGroup *rbgroup = m_rbGroups.at(i);
-        changedItems += rbgroup->setItemOn( this );
+      if (obeyRadioGroups) {
+	for (RadioButtonGroup *rbgroup : as_const(m_rbGroups)) {
+	  changedItems += rbgroup->setItemOn( this );
+	}
       }
     } else if ( state == OptContentItem::Off ) {
       m_group->setState( OptionalContentGroup::Off );
@@ -201,7 +204,7 @@ namespace Poppler
     for (int i = 0; i < orderArray->getLength(); ++i) {
       Object orderItem = orderArray->get(i);
       if ( orderItem.isDict() ) {
-	Object item = orderArray->getNF(i);
+	const Object &item = orderArray->getNF(i);
 	if (item.isRef() ) {
           OptContentItem *ocItem = m_optContentItems.value(QString::number(item.getRefNum()));
 	  if (ocItem) {
@@ -364,7 +367,7 @@ namespace Poppler
           Q_FOREACH (OptContentItem *item, changedItems) {
             indexes.append(d->indexFromItem(item, 0));
           }
-          qStableSort(indexes);
+          std::stable_sort(indexes.begin(), indexes.end());
           Q_FOREACH (const QModelIndex &changedIndex, indexes) {
             emit dataChanged(changedIndex, changedIndex);
           }
@@ -394,26 +397,23 @@ namespace Poppler
 
   void OptContentModel::applyLink( LinkOCGState *link )
   {
-    ::LinkOCGState *popplerLinkOCGState = static_cast<LinkOCGStatePrivate*>(link->d_ptr)->popplerLinkOCGState;
+    LinkOCGStatePrivate *linkPrivate = link->d_func();
 
     QSet<OptContentItem *> changedItems;
 
-    const GooList *statesList = popplerLinkOCGState->getStateList();
-    for (int i = 0; i < statesList->getLength(); ++i) {
-        ::LinkOCGState::StateList *stateList = (::LinkOCGState::StateList*)statesList->get(i);
+    const std::vector<::LinkOCGState::StateList>& statesList = linkPrivate->stateList;
+    for (const ::LinkOCGState::StateList& stateList : statesList) {
+        const std::vector<Ref>& refsList = stateList.list;
+        for (const Ref& ref : refsList) {
+            OptContentItem *item = d->itemFromRef(QString::number(ref.num));
 
-        GooList *refsList = stateList->list;
-        for (int j = 0; j < refsList->getLength(); ++j) {
-            Ref *ref = (Ref *)refsList->get(j);
-            OptContentItem *item = d->itemFromRef(QString::number(ref->num));
-
-            if (stateList->st == ::LinkOCGState::On) {
-              item->setState(OptContentItem::On, popplerLinkOCGState->getPreserveRB(), changedItems);
-            } else if (stateList->st == ::LinkOCGState::Off) {
-              item->setState(OptContentItem::Off, popplerLinkOCGState->getPreserveRB(), changedItems);
+            if (stateList.st == ::LinkOCGState::On) {
+              item->setState(OptContentItem::On, linkPrivate->preserveRB, changedItems);
+            } else if (stateList.st == ::LinkOCGState::Off) {
+              item->setState(OptContentItem::Off, linkPrivate->preserveRB, changedItems);
             } else {
               OptContentItem::ItemState newState = item->state() == OptContentItem::On ? OptContentItem::Off : OptContentItem::On;
-              item->setState(newState, popplerLinkOCGState->getPreserveRB(), changedItems);
+              item->setState(newState, linkPrivate->preserveRB, changedItems);
             }
         }
     }
@@ -428,7 +428,7 @@ namespace Poppler
       Q_FOREACH (OptContentItem *item, changedItems) {
         indexes.append(d->indexFromItem(item, 0));
       }
-      qStableSort(indexes);
+      std::stable_sort(indexes.begin(), indexes.end());
       Q_FOREACH (const QModelIndex &changedIndex, indexes) {
         emit dataChanged(changedIndex, changedIndex);
       }

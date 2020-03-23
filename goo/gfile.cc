@@ -27,6 +27,7 @@
 // Copyright (C) 2013, 2017 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2017 Christoph Cullmann <cullmann@kde.org>
 // Copyright (C) 2018 Mojca Miklavec <mojca@macports.org>
+// Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -36,23 +37,14 @@
 #include <config.h>
 
 #ifndef _WIN32
-#  if defined(MACOS)
-#    include <sys/stat.h>
-#  elif !defined(ACORN)
-#    include <sys/types.h>
-#    include <sys/stat.h>
-#    include <fcntl.h>
-#  endif
-#  include <limits.h>
-#  include <string.h>
-#  if !defined(VMS) && !defined(ACORN) && !defined(MACOS)
-#    include <pwd.h>
-#  endif
-#  if defined(VMS) && (__DECCXX_VER < 50200000)
-#    include <unixlib.h>
-#  endif
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  include <fcntl.h>
+#  include <climits>
+#  include <cstring>
+#  include <pwd.h>
 #endif // _WIN32
-#include <stdio.h>
+#include <cstdio>
 #include <limits>
 #include "GooString.h"
 #include "gfile.h"
@@ -65,6 +57,8 @@
 #endif
 
 #ifndef _WIN32
+
+using namespace std::string_literals;
 
 namespace {
 
@@ -104,66 +98,8 @@ inline const struct timespec& mtim(const struct stat& stbuf) {
 
 //------------------------------------------------------------------------
 
-GooString *getCurrentDir() {
-  char buf[PATH_MAX+1];
-
-#if defined(__EMX__)
-  if (_getcwd2(buf, sizeof(buf)))
-#elif defined(_WIN32)
-  if (GetCurrentDirectoryA(sizeof(buf), buf))
-#elif defined(ACORN)
-  if (strcpy(buf, "@"))
-#elif defined(MACOS)
-  if (strcpy(buf, ":"))
-#else
-  if (getcwd(buf, sizeof(buf)))
-#endif
-    return new GooString(buf);
-  return new GooString();
-}
-
 GooString *appendToPath(GooString *path, const char *fileName) {
-#if defined(VMS)
-  //---------- VMS ----------
-  //~ this should handle everything necessary for file
-  //~ requesters, but it's certainly not complete
-  char *p0, *p1, *p2;
-  char *q1;
-
-  p0 = path->getCString();
-  p1 = p0 + path->getLength() - 1;
-  if (!strcmp(fileName, "-")) {
-    if (*p1 == ']') {
-      for (p2 = p1; p2 > p0 && *p2 != '.' && *p2 != '['; --p2) ;
-      if (*p2 == '[')
-	++p2;
-      path->del(p2 - p0, p1 - p2);
-    } else if (*p1 == ':') {
-      path->append("[-]");
-    } else {
-      path->clear();
-      path->append("[-]");
-    }
-  } else if ((q1 = strrchr(fileName, '.')) && !strncmp(q1, ".DIR;", 5)) {
-    if (*p1 == ']') {
-      path->insert(p1 - p0, '.');
-      path->insert(p1 - p0 + 1, fileName, q1 - fileName);
-    } else if (*p1 == ':') {
-      path->append('[');
-      path->append(']');
-      path->append(fileName, q1 - fileName);
-    } else {
-      path->clear();
-      path->append(fileName, q1 - fileName);
-    }
-  } else {
-    if (*p1 != ']' && *p1 != ':')
-      path->clear();
-    path->append(fileName);
-  }
-  return path;
-
-#elif defined(_WIN32)
+#ifdef _WIN32
   //---------- Win32 ----------
   GooString *tmp;
   char buf[256];
@@ -172,84 +108,10 @@ GooString *appendToPath(GooString *path, const char *fileName) {
   tmp = new GooString(path);
   tmp->append('/');
   tmp->append(fileName);
-  GetFullPathNameA(tmp->getCString(), sizeof(buf), buf, &fp);
+  GetFullPathNameA(tmp->c_str(), sizeof(buf), buf, &fp);
   delete tmp;
   path->clear();
   path->append(buf);
-  return path;
-
-#elif defined(ACORN)
-  //---------- RISCOS ----------
-  char *p;
-  int i;
-
-  path->append(".");
-  i = path->getLength();
-  path->append(fileName);
-  for (p = path->getCString() + i; *p; ++p) {
-    if (*p == '/') {
-      *p = '.';
-    } else if (*p == '.') {
-      *p = '/';
-    }
-  }
-  return path;
-
-#elif defined(MACOS)
-  //---------- MacOS ----------
-  char *p;
-  int i;
-
-  path->append(":");
-  i = path->getLength();
-  path->append(fileName);
-  for (p = path->getCString() + i; *p; ++p) {
-    if (*p == '/') {
-      *p = ':';
-    } else if (*p == '.') {
-      *p = ':';
-    }
-  }
-  return path;
-
-#elif defined(__EMX__)
-  //---------- OS/2+EMX ----------
-  int i;
-
-  // appending "." does nothing
-  if (!strcmp(fileName, "."))
-    return path;
-
-  // appending ".." goes up one directory
-  if (!strcmp(fileName, "..")) {
-    for (i = path->getLength() - 2; i >= 0; --i) {
-      if (path->getChar(i) == '/' || path->getChar(i) == '\\' ||
-	  path->getChar(i) == ':')
-	break;
-    }
-    if (i <= 0) {
-      if (path->getChar(0) == '/' || path->getChar(0) == '\\') {
-	path->del(1, path->getLength() - 1);
-      } else if (path->getLength() >= 2 && path->getChar(1) == ':') {
-	path->del(2, path->getLength() - 2);
-      } else {
-	path->clear();
-	path->append("..");
-      }
-    } else {
-      if (path->getChar(i-1) == ':')
-	++i;
-      path->del(i, path->getLength() - i);
-    }
-    return path;
-  }
-
-  // otherwise, append "/" and new path component
-  if (path->getLength() > 0 &&
-      path->getChar(path->getLength() - 1) != '/' &&
-      path->getChar(path->getLength() - 1) != '\\')
-    path->append('/');
-  path->append(fileName);
   return path;
 
 #else
@@ -288,214 +150,37 @@ GooString *appendToPath(GooString *path, const char *fileName) {
 #endif
 }
 
-GooString *grabPath(char *fileName) {
-#ifdef VMS
-  //---------- VMS ----------
-  char *p;
+static bool makeFileDescriptorCloexec(int fd) {
+#ifdef FD_CLOEXEC
+  int flags = fcntl(fd, F_GETFD);
+  if (flags >= 0 && !(flags & FD_CLOEXEC))
+    flags = fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
 
-  if ((p = strrchr(fileName, ']')))
-    return new GooString(fileName, p + 1 - fileName);
-  if ((p = strrchr(fileName, ':')))
-    return new GooString(fileName, p + 1 - fileName);
-  return new GooString();
-
-#elif defined(__EMX__) || defined(_WIN32)
-  //---------- OS/2+EMX and Win32 ----------
-  char *p;
-
-  if ((p = strrchr(fileName, '/')))
-    return new GooString(fileName, p - fileName);
-  if ((p = strrchr(fileName, '\\')))
-    return new GooString(fileName, p - fileName);
-  if ((p = strrchr(fileName, ':')))
-    return new GooString(fileName, p + 1 - fileName);
-  return new GooString();
-
-#elif defined(ACORN)
-  //---------- RISCOS ----------
-  char *p;
-
-  if ((p = strrchr(fileName, '.')))
-    return new GooString(fileName, p - fileName);
-  return new GooString();
-
-#elif defined(MACOS)
-  //---------- MacOS ----------
-  char *p;
-
-  if ((p = strrchr(fileName, ':')))
-    return new GooString(fileName, p - fileName);
-  return new GooString();
-
+  return flags >= 0;
 #else
-  //---------- Unix ----------
-  char *p;
-
-  if ((p = strrchr(fileName, '/')))
-    return new GooString(fileName, p - fileName);
-  return new GooString();
+  return true;
 #endif
 }
 
-GBool isAbsolutePath(char *path) {
-#ifdef VMS
-  //---------- VMS ----------
-  return strchr(path, ':') ||
-	 (path[0] == '[' && path[1] != '.' && path[1] != '-');
+#ifndef _WIN32
 
-#elif defined(__EMX__) || defined(_WIN32)
-  //---------- OS/2+EMX and Win32 ----------
-  return path[0] == '/' || path[0] == '\\' || path[1] == ':';
-
-#elif defined(ACORN)
-  //---------- RISCOS ----------
-  return path[0] == '$';
-
-#elif defined(MACOS)
-  //---------- MacOS ----------
-  return path[0] != ':';
-
+int openFileDescriptor(const char *path, int flags) {
+#ifdef O_CLOEXEC
+  return open(path, flags | O_CLOEXEC);
 #else
-  //---------- Unix ----------
-  return path[0] == '/';
+  int fd = open(path, flags);
+  if (fd == -1)
+    return fd;
+
+  if (!makeFileDescriptorCloexec(fd)) {
+    close(fd);
+    return -1;
+  }
+
+  return fd;
 #endif
 }
 
-time_t getModTime(char *fileName) {
-#ifdef _WIN32
-  //~ should implement this, but it's (currently) only used in xpdf
-  return 0;
-#else
-  struct stat statBuf;
-
-  if (stat(fileName, &statBuf)) {
-    return 0;
-  }
-  return statBuf.st_mtime;
-#endif
-}
-
-GBool openTempFile(GooString **name, FILE **f, const char *mode) {
-#if defined(_WIN32)
-  //---------- Win32 ----------
-  char *tempDir;
-  GooString *s, *s2;
-  FILE *f2;
-  int t, i;
-
-  // this has the standard race condition problem, but I haven't found
-  // a better way to generate temp file names with extensions on
-  // Windows
-  if ((tempDir = getenv("TEMP"))) {
-    s = new GooString(tempDir);
-    s->append('\\');
-  } else {
-    s = new GooString();
-  }
-  s->appendf("x_{0:d}_{1:d}_",
-	     (int)GetCurrentProcessId(), (int)GetCurrentThreadId());
-  t = (int)time(nullptr);
-  for (i = 0; i < 1000; ++i) {
-    s2 = s->copy()->appendf("{0:d}", t + i);
-    if (!(f2 = fopen(s2->getCString(), "r"))) {
-      if (!(f2 = fopen(s2->getCString(), mode))) {
-	delete s2;
-	delete s;
-        return gFalse;
-      }
-      *name = s2;
-      *f = f2;
-      delete s;
-      return gTrue;
-    }
-    fclose(f2);
-    delete s2;
-  }
-  delete s;
-  return gFalse;
-#elif defined(VMS) || defined(__EMX__) || defined(ACORN) || defined(MACOS)
-  //---------- non-Unix ----------
-  char *s;
-
-  // There is a security hole here: an attacker can create a symlink
-  // with this file name after the tmpnam call and before the fopen
-  // call.  I will happily accept fixes to this function for non-Unix
-  // OSs.
-  if (!(s = tmpnam(NULL))) {
-    return gFalse;
-  }
-  *name = new GooString(s);
-  if (!(*f = fopen((*name)->getCString(), mode))) {
-    delete (*name);
-    *name = NULL;
-    return gFalse;
-  }
-  return gTrue;
-#else
-  //---------- Unix ----------
-  char *s;
-  int fd;
-
-#ifdef HAVE_MKSTEMP
-  if ((s = getenv("TMPDIR"))) {
-    *name = new GooString(s);
-  } else {
-    *name = new GooString("/tmp");
-  }
-  (*name)->append("/XXXXXX");
-  fd = mkstemp((*name)->getCString());
-#else // HAVE_MKSTEMP
-  if (!(s = tmpnam(NULL))) {
-    return gFalse;
-  }
-  *name = new GooString(s);
-  fd = open((*name)->getCString(), O_WRONLY | O_CREAT | O_EXCL, 0600);
-#endif // HAVE_MKSTEMP
-  if (fd < 0 || !(*f = fdopen(fd, mode))) {
-    delete *name;
-    *name = nullptr;
-    return gFalse;
-  }
-  return gTrue;
-#endif
-}
-
-#ifdef _WIN32
-GooString *fileNameToUTF8(char *path) {
-  GooString *s;
-  char *p;
-
-  s = new GooString();
-  for (p = path; *p; ++p) {
-    if (*p & 0x80) {
-      s->append((char)(0xc0 | ((*p >> 6) & 0x03)));
-      s->append((char)(0x80 | (*p & 0x3f)));
-    } else {
-      s->append(*p);
-    }
-  }
-  return s;
-}
-
-GooString *fileNameToUTF8(wchar_t *path) {
-  GooString *s;
-  wchar_t *p;
-
-  s = new GooString();
-  for (p = path; *p; ++p) {
-    if (*p < 0x80) {
-      s->append((char)*p);
-    } else if (*p < 0x800) {
-      s->append((char)(0xc0 | ((*p >> 6) & 0x1f)));
-      s->append((char)(0x80 | (*p & 0x3f)));
-    } else {
-      s->append((char)(0xe0 | ((*p >> 12) & 0x0f)));
-      s->append((char)(0x80 | ((*p >> 6) & 0x3f)));
-      s->append((char)(0x80 | (*p & 0x3f)));
-    }
-  }
-  return s;
-}
 #endif
 
 FILE *openFile(const char *path, const char *mode) {
@@ -557,7 +242,23 @@ FILE *openFile(const char *path, const char *mode) {
     return fopen(nPath, mode);
   }
 #else
-  return fopen(path, mode);
+  // First try to atomically open the file with CLOEXEC
+  const std::string modeStr = mode + "e"s;
+  FILE *file = fopen(path, modeStr.c_str());
+  if (file != nullptr)
+    return file;
+
+  // Fall back to the provided mode and apply CLOEXEC afterwards
+  file = fopen(path, mode);
+  if (file == nullptr)
+    return nullptr;
+
+  if (!makeFileDescriptorCloexec(fileno(file))) {
+    fclose(file);
+    return nullptr;
+  }
+
+  return file;
 #endif
 }
 
@@ -662,7 +363,7 @@ Goffset GooFile::size() const {
 }
 
 GooFile* GooFile::open(const GooString *fileName) {
-  HANDLE handle = CreateFileA(fileName->getCString(),
+  HANDLE handle = CreateFileA(fileName->c_str(),
                               GENERIC_READ,
                               FILE_SHARE_READ | FILE_SHARE_WRITE,
                               nullptr,
@@ -710,11 +411,7 @@ Goffset GooFile::size() const {
 }
 
 GooFile* GooFile::open(const GooString *fileName) {
-#ifdef VMS
-  int fd = ::open(fileName->getCString(), Q_RDONLY, "ctx=stm");
-#else
-  int fd = ::open(fileName->getCString(), O_RDONLY);
-#endif
+  int fd = openFileDescriptor(fileName->c_str(), O_RDONLY);
   
   return fd < 0 ? nullptr : new GooFile(fd);
 }
@@ -741,34 +438,24 @@ bool GooFile::modificationTimeChangedSinceOpen() const
 // GDir and GDirEntry
 //------------------------------------------------------------------------
 
-GDirEntry::GDirEntry(char *dirPath, char *nameA, GBool doStat) {
-#ifdef VMS
-  char *p;
-#elif defined(_WIN32)
+GDirEntry::GDirEntry(const char *dirPath, const char *nameA, bool doStat) {
+#ifdef _WIN32
   DWORD fa;
-#elif defined(ACORN)
 #else
   struct stat st;
 #endif
 
   name = new GooString(nameA);
-  dir = gFalse;
+  dir = false;
   fullPath = new GooString(dirPath);
   appendToPath(fullPath, nameA);
   if (doStat) {
-#ifdef VMS
-    if (!strcmp(nameA, "-") ||
-	((p = strrchr(nameA, '.')) && !strncmp(p, ".DIR;", 5)))
-      dir = gTrue;
-#elif defined(ACORN)
-#else
 #ifdef _WIN32
-    fa = GetFileAttributesA(fullPath->getCString());
+    fa = GetFileAttributesA(fullPath->c_str());
     dir = (fa != 0xFFFFFFFF && (fa & FILE_ATTRIBUTE_DIRECTORY));
 #else
-    if (stat(fullPath->getCString(), &st) == 0)
+    if (stat(fullPath->c_str(), &st) == 0)
       dir = S_ISDIR(st.st_mode);
-#endif
 #endif
   }
 }
@@ -778,35 +465,28 @@ GDirEntry::~GDirEntry() {
   delete name;
 }
 
-GDir::GDir(char *name, GBool doStatA) {
+GDir::GDir(const char *name, bool doStatA) {
   path = new GooString(name);
   doStat = doStatA;
-#if defined(_WIN32)
+#ifdef _WIN32
   GooString *tmp;
 
   tmp = path->copy();
   tmp->append("/*.*");
-  hnd = FindFirstFileA(tmp->getCString(), &ffd);
+  hnd = FindFirstFileA(tmp->c_str(), &ffd);
   delete tmp;
-#elif defined(ACORN)
-#elif defined(MACOS)
 #else
   dir = opendir(name);
-#ifdef VMS
-  needParent = strchr(name, '[') != NULL;
-#endif
 #endif
 }
 
 GDir::~GDir() {
   delete path;
-#if defined(_WIN32)
+#ifdef _WIN32
   if (hnd != INVALID_HANDLE_VALUE) {
     FindClose(hnd);
     hnd = INVALID_HANDLE_VALUE;
   }
-#elif defined(ACORN)
-#elif defined(MACOS)
 #else
   if (dir)
     closedir(dir);
@@ -816,27 +496,12 @@ GDir::~GDir() {
 GDirEntry *GDir::getNextEntry() {
   GDirEntry *e = nullptr;
 
-#if defined(_WIN32)
+#ifdef _WIN32
   if (hnd != INVALID_HANDLE_VALUE) {
-    e = new GDirEntry(path->getCString(), ffd.cFileName, doStat);
+    e = new GDirEntry(path->c_str(), ffd.cFileName, doStat);
     if (!FindNextFileA(hnd, &ffd)) {
       FindClose(hnd);
       hnd = INVALID_HANDLE_VALUE;
-    }
-  }
-#elif defined(ACORN)
-#elif defined(MACOS)
-#elif defined(VMS)
-  struct dirent *ent;
-  if (dir) {
-    if (needParent) {
-      e = new GDirEntry(path->getCString(), "-", doStat);
-      needParent = gFalse;
-      return e;
-    }
-    ent = readdir(dir);
-    if (ent) {
-      e = new GDirEntry(path->getCString(), ent->d_name, doStat);
     }
   }
 #else
@@ -847,7 +512,7 @@ GDirEntry *GDir::getNextEntry() {
     }
     while (ent && (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")));
     if (ent) {
-      e = new GDirEntry(path->getCString(), ent->d_name, doStat);
+      e = new GDirEntry(path->c_str(), ent->d_name, doStat);
     }
   }
 #endif
@@ -863,15 +528,10 @@ void GDir::rewind() {
     FindClose(hnd);
   tmp = path->copy();
   tmp->append("/*.*");
-  hnd = FindFirstFileA(tmp->getCString(), &ffd);
+  hnd = FindFirstFileA(tmp->c_str(), &ffd);
   delete tmp;
-#elif defined(ACORN)
-#elif defined(MACOS)
 #else
   if (dir)
     rewinddir(dir);
-#ifdef VMS
-  needParent = strchr(path->getCString(), '[') != NULL;
-#endif
 #endif
 }

@@ -40,6 +40,7 @@ if (HAVE_CAIRO)
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}
+    SYSTEM
     ${CAIRO_INCLUDE_DIRS}
   )
   add_definitions(${CAIRO_CFLAGS})
@@ -66,6 +67,15 @@ add_executable(pdfdetach ${pdfdetach_SOURCES})
 target_link_libraries(pdfdetach ${common_libs})
 install(TARGETS pdfdetach DESTINATION bin)
 install(FILES pdfdetach.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+
+# pdfdetach
+set(pdfattach_SOURCES ${common_srcs}
+  pdfattach.cc
+)
+add_executable(pdfattach ${pdfattach_SOURCES})
+target_link_libraries(pdfattach ${common_libs})
+install(TARGETS pdfattach DESTINATION bin)
+install(FILES pdfattach.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 # pdffonts
 set(pdffonts_SOURCES ${common_srcs}
@@ -106,6 +116,7 @@ if (ENABLE_NSS3)
     pdfsig.cc
   )
   add_executable(pdfsig ${pdfsig_SOURCES})
+  target_include_directories(pdfsig SYSTEM PRIVATE ${NSS3_INCLUDE_DIRS})
   target_link_libraries(pdfsig ${common_libs})
   install(TARGETS pdfsig DESTINATION bin)
   install(FILES pdfsig.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
@@ -131,6 +142,7 @@ install(FILES pdftotext.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 # pdftohtml
 set(pdftohtml_SOURCES ${common_srcs}
+  InMemoryFile.cc
   pdftohtml.cc
   HtmlFonts.cc
   HtmlLinks.cc

@@ -11,7 +11,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2009, 2016 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009, 2016, 2018, 2020 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
 //
 // To see a description of the changes please see the Changelog file that
@@ -21,12 +21,8 @@
 
 #include <config.h>
 
-#ifdef USE_GCC_PRAGMAS
-#pragma implementation
-#endif
-
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <algorithm>
 #include "goo/gmem.h"
 #include "goo/grandom.h"
@@ -34,7 +30,7 @@
 #include "SplashMath.h"
 #include "SplashScreen.h"
 
-static SplashScreenParams defaultParams = {
+static const SplashScreenParams defaultParams = {
   splashScreenDispersed,	// type
   2,				// size
   2,				// dotRadius
@@ -52,7 +48,7 @@ struct SplashScreenPoint {
 
 
 struct cmpDistancesFunctor {
-  bool operator()(const SplashScreenPoint &p0, const SplashScreenPoint &p1) {
+  bool operator()(const SplashScreenPoint p0, const SplashScreenPoint p1) {
     return p0.dist < p1.dist;
   }
 };
@@ -66,7 +62,7 @@ struct cmpDistancesFunctor {
 // sqrt(2)).  If <clustered> is false, this generates an optimal
 // threshold matrix using recursive tesselation.  Gamma correction
 // (gamma = 1 / 1.33) is also computed here.
-SplashScreen::SplashScreen(SplashScreenParams *params) {
+SplashScreen::SplashScreen(const SplashScreenParams *params) {
 
   if (!params) {
     params = &defaultParams;
@@ -81,10 +77,10 @@ SplashScreen::SplashScreen(SplashScreenParams *params) {
 
 void SplashScreen::createMatrix()
 {
-  Guchar u;
+  unsigned char u;
   int black, white, i;
   
-  SplashScreenParams *params = screenParams;
+  const SplashScreenParams *params = screenParams;
 
   // size must be a power of 2, and at least 2
   for (size = 2, log2Size = 1; size < params->size; size <<= 1, ++log2Size) ;
@@ -92,12 +88,12 @@ void SplashScreen::createMatrix()
   switch (params->type) {
 
   case splashScreenDispersed:
-    mat = (Guchar *)gmallocn(size * size, sizeof(Guchar));
+    mat = (unsigned char *)gmallocn(size * size, sizeof(unsigned char));
     buildDispersedMatrix(size/2, size/2, 1, size/2, 1);
     break;
 
   case splashScreenClustered:
-    mat = (Guchar *)gmallocn(size * size, sizeof(Guchar));
+    mat = (unsigned char *)gmallocn(size * size, sizeof(unsigned char));
     buildClusteredMatrix();
     break;
 
@@ -107,7 +103,7 @@ void SplashScreen::createMatrix()
       size <<= 1;
       ++log2Size;
     }
-    mat = (Guchar *)gmallocn(size * size, sizeof(Guchar));
+    mat = (unsigned char *)gmallocn(size * size, sizeof(unsigned char));
     buildSCDMatrix(params->dotRadius);
     break;
   }
@@ -131,9 +127,9 @@ void SplashScreen::createMatrix()
     u = splashRound((SplashCoord)255.0 *
 		    splashPow((SplashCoord)mat[i] / 255.0, params->gamma));
     if (u < black) {
-      u = (Guchar)black;
+      u = (unsigned char)black;
     } else if (u >= white) {
-      u = (Guchar)white;
+      u = (unsigned char)white;
     }
     mat[i] = u;
     if (u < minVal) {
@@ -164,7 +160,7 @@ void SplashScreen::buildDispersedMatrix(int i, int j, int val,
 void SplashScreen::buildClusteredMatrix() {
   SplashCoord *dist;
   SplashCoord u, v, d;
-  Guchar val;
+  unsigned char val;
   int size2, x, y, x1, y1, i;
 
   size2 = size >> 1;
@@ -377,9 +373,9 @@ SplashScreen::SplashScreen(SplashScreen *screen) {
   size = screen->size;
   sizeM1 = screen->sizeM1;
   log2Size = screen->log2Size;
-  mat = (Guchar *)gmallocn(size * size, sizeof(Guchar));
+  mat = (unsigned char *)gmallocn(size * size, sizeof(unsigned char));
   if (likely(mat != nullptr)) {
-    memcpy(mat, screen->mat, size * size * sizeof(Guchar));
+    memcpy(mat, screen->mat, size * size * sizeof(unsigned char));
   }
   minVal = screen->minVal;
   maxVal = screen->maxVal;
