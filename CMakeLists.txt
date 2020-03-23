@@ -509,9 +509,9 @@ set(poppler_LIBS ${poppler_LIBS}
   libjpeg.a
   usp10
   rpcrt4
-  zstd
-  pixman-1
-  freetype
+  libzstd.notdll.a
+  libpixman-1.notdll.a
+  libfreetype.notdll.a
   )
 
 if (GPERF AND RUN_GPERF_IF_PRESENT)
