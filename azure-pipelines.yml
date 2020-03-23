@@ -12,5 +12,5 @@ steps:
     script: |
       mkdir build
       cd build
-      cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D BUILD_GTK_TESTS:BOOL=OFF -D BUILD_QT5_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF ..
+      cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON ..
       make
