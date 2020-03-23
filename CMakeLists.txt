@@ -507,8 +507,11 @@ set(poppler_LIBS ${poppler_LIBS}
   libcurl.notdll.a 
   libgraphite2.notdll.a
   libjpeg.a
-  libacrt_iob_func.a
-  libacrt_iob_func.notdll.a
+  usp10
+  rpcrt4
+  zstd
+  pixman-1
+  freetype
   )
 
 if (GPERF AND RUN_GPERF_IF_PRESENT)
