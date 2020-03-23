@@ -6,9 +6,6 @@
 trigger:
 - master+static-0920+pdftopngs
 
-pool:
-  vmImage: 'ubuntu-latest'
-
 steps:
 - task: CMake@1
   inputs:
