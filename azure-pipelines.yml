@@ -6,15 +6,11 @@
 trigger:
 - master+static-0920+pdftopngs
 
-pool:
-  name: Default
-
 steps:
-- task: CMake@1
+- task: CmdLine@2
   inputs:
-   workingDirectory: build
-   cmakeArgs:  -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D BUILD_GTK_TESTS:BOOL=OFF -D BUILD_QT5_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF
-
-- script: |
-    make
-  displayName: 'make'
+    script: |
+      mkdir build
+      cd build
+      cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D BUILD_GTK_TESTS:BOOL=OFF -D BUILD_QT5_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF ..
+      make
