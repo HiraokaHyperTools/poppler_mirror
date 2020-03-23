@@ -6,6 +6,9 @@
 trigger:
 - master+static-0920+pdftopngs
 
+pool:
+  name: Default
+
 steps:
 - task: CMake@1
   inputs:
