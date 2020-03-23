@@ -337,7 +337,7 @@ SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, const char 
   FILE *f;
   SplashError e;
 
-  if (!(f = openFile(fileName, "wb"))) {
+  if (!(f = openFile(fileName, params->appendTiff ? "r+b" : "wb"))) {
     return splashErrOpenFile;
   }
 
@@ -408,6 +408,7 @@ SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, FILE *f, in
       }
       if (writer && params) {
         ((TiffWriter *)writer)->setCompressionString(params->tiffCompression.c_str());
+        ((TiffWriter *)writer)->setAppend(params->appendTiff);
       }
       break;
     #endif

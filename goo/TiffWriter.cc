@@ -164,9 +164,9 @@ bool TiffWriter::init(FILE *openedFile, int width, int height, int hDPI, int vDP
 
 #ifdef _WIN32
   //Convert C Library handle to Win32 Handle
-  priv->f = TIFFFdOpen(_get_osfhandle(fileno(openedFile)), "-", "w");
+  priv->f = TIFFFdOpen(_get_osfhandle(fileno(openedFile)), "-", appendTiff ? "a" : "w");
 #else
-  priv->f = TIFFFdOpen(fileno(openedFile), "-", "w");
+  priv->f = TIFFFdOpen(fileno(openedFile), "-", appendTiff ? "a" : "w");
 #endif
 
 

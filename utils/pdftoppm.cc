@@ -97,6 +97,7 @@ static char sep[2] = "-";
 static bool forceNum = false;
 static bool png = false;
 static bool jpeg = false;
+static bool singleTiff = false;
 static bool jpegcmyk = false;
 static bool tiff = false;
 static GooString jpegOpt;
@@ -189,6 +190,8 @@ static const ArgDesc argDesc[] = {
 #ifdef ENABLE_LIBTIFF
   {"-tiff",    argFlag,     &tiff,           0,
    "generate a TIFF file"},
+  {"-singletiff",argFlag,     &singleTiff,           0,
+   "generate a single TIFF file"},
   {"-tiffcompression", argString, TiffCompressionStr, sizeof(TiffCompressionStr),
    "set TIFF compression: none, packbits, jpeg, lzw, deflate"},
 #endif
@@ -300,7 +303,7 @@ static void savePageSlice(PDFDoc *doc,
                    SplashOutputDev *splashOut, 
                    int pg, int x, int y, int w, int h, 
                    double pg_w, double pg_h, 
-                   char *ppmFile) {
+                   char *ppmFile, bool appendTiff) {
   if (w == 0) w = (int)ceil(pg_w);
   if (h == 0) h = (int)ceil(pg_h);
   w = (x+w > pg_w ? (int)ceil(pg_w-x) : w);
@@ -320,6 +323,7 @@ static void savePageSlice(PDFDoc *doc,
   params.jpegProgressive = jpegProgressive;
   params.jpegOptimize = jpegOptimize;
   params.tiffCompression.Set(TiffCompressionStr);
+  params.appendTiff = appendTiff;
 
   if (ppmFile != nullptr) {
     if (png) {
@@ -614,7 +618,7 @@ int main(int argc, char *argv[]) {
 
     if (ppmRoot != nullptr) {
       const char *ext = png ? "png" : (jpeg || jpegcmyk) ? "jpg" : tiff ? "tif" : mono ? "pbm" : gray ? "pgm" : "ppm";
-      if (singleFile && !forceNum ) {
+      if ((singleFile || singleTiff) && !forceNum) {
         ppmFile = new char[strlen(ppmRoot) + 1 + strlen(ext) + 1];
         sprintf(ppmFile, "%s.%s", ppmRoot, ext);
       } else {
@@ -626,7 +630,7 @@ int main(int argc, char *argv[]) {
     }
 #ifndef UTILS_USE_PTHREADS
     // process job in main thread
-    savePageSlice(doc, splashOut, pg, param_x, param_y, param_w, param_h, pg_w, pg_h, ppmFile);
+    savePageSlice(doc, splashOut, pg, param_x, param_y, param_w, param_h, pg_w, pg_h, ppmFile, pg > firstPage);
     
     delete[] ppmFile;
 #else

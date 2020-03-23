@@ -80,6 +80,7 @@ public:
     bool jpegProgressive = false;
     GooString tiffCompression;
     bool jpegOptimize = false;
+    bool appendTiff = false;
   };
 
   SplashError writeImgFile(SplashImageFileFormat format, const char *fileName, int hDPI, int vDPI, WriteImgParams* params = nullptr);
