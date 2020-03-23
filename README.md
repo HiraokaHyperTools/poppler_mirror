@@ -1,22 +1,22 @@
-# poppler ©†‚É‚Â‚«‚Ü‚µ‚Ä
+# poppler è‡ªç‚Šã«ã¤ãã¾ã—ã¦
 
-Windows ‚Å‚Ì‚İ—L—p‚Å‚·B
-MSYS2 ‚ğg—p‚µ‚Ü‚·B
+Windows ã§ã®ã¿æœ‰ç”¨ã§ã™ã€‚
+MSYS2 ã‚’ä½¿ç”¨ã—ã¾ã™ã€‚
 
-## ƒrƒ‹ƒhè‡
+## ãƒ“ãƒ«ãƒ‰æ‰‹é †
 
 ```sh
 mkdir mingw32
 cd mingw32
-cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D BUILD_GTK_TESTS:BOOL=OFF -D BUILD_QT5_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF  ..
+cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON ..
 make
 ```
 
-## èn‚ß‚ÉŠÂ‹«\’z‚©‚ç
+## æ‰‹å§‹ã‚ã«ç’°å¢ƒæ§‹ç¯‰ã‹ã‚‰
 
-https://www.msys2.org/ ‚É‚Ä `msys2-i686-20161025.exe` ‚ğƒ_ƒEƒ“ƒ[ƒh‚µ‚ÄƒZƒbƒgƒAƒbƒv‚µ‚Ü‚·B
+https://www.msys2.org/ ã«ã¦ `msys2-i686-20161025.exe` ã‚’ãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰ã—ã¦ã‚»ãƒƒãƒˆã‚¢ãƒƒãƒ—ã—ã¾ã™ã€‚
 
-### MinGW ŠÂ‹«\’z
+### MinGW ç’°å¢ƒæ§‹ç¯‰
 
 ```sh
 pacman -S mingw32/mingw-w64-i686-freetype
@@ -28,13 +28,16 @@ pacman -S mingw32/mingw-w64-i686-openjpeg2
 pacman -S mingw32/mingw-w64-i686-cmake
 pacman -S mingw32/mingw-w64-i686-pkg-config
 pacman -S mingw32/mingw-w64-i686-jsoncpp
+pacman -S mingw32/mingw-w64-i686-cairo
+pacman -S mingw32/mingw-w64-i686-boost
+pacman -S mingw32/mingw-w64-i686-nasm
 ```
 
-### openjpeg ‚ openjpeg2
+### openjpeg â‰  openjpeg2
 
-CMakeLists.txt ‚É‚ÄA‚ ‚½‚©‚à `OpenJPEG` ‚ª `openjpeg2` ‚Æ“¯ˆê‚Å‚ ‚é‚©‚Ì‚æ‚¤‚È‰¼’è‚ª‚È‚³‚ê‚Ä‚¢‚é‚Ì‚ÅA‚»‚Ì‘Îô‚Å‚·B
+CMakeLists.txt ã«ã¦ã€ã‚ãŸã‹ã‚‚ `OpenJPEG` ãŒ `openjpeg2` ã¨åŒä¸€ã§ã‚ã‚‹ã‹ã®ã‚ˆã†ãªä»®å®šãŒãªã•ã‚Œã¦ã„ã‚‹ã®ã§ã€ãã®å¯¾ç­–ã§ã™ã€‚
 
-–â‘è‚Ì‰ÓŠ:
+å•é¡Œã®ç®‡æ‰€:
 
 ```txt
 if(ENABLE_LIBOPENJPEG STREQUAL "openjpeg2")
@@ -46,7 +49,7 @@ if(ENABLE_LIBOPENJPEG STREQUAL "openjpeg2")
   set(HAVE_JPX_DECODER ON)
 ```
 
-ƒGƒ‰[ƒƒbƒZ[ƒW:
+ã‚¨ãƒ©ãƒ¼ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸:
 
 ```txt
 CMake Error at CMakeLists.txt:207 (message):
@@ -54,32 +57,32 @@ CMake Error at CMakeLists.txt:207 (message):
   to use the internal unmaintained JPX decoder or none at all.
 ```
 
-‘Îô:
+å¯¾ç­–:
 
 ```sh
 cp /mingw32/lib/pkgconfig/libopenjp2.pc /mingw32/lib/pkgconfig/libopenjpeg.pc
 ```
 
-### `*.notdll.a` ì¬
+### `*.notdll.a` ä½œæˆ
 
 ```sh
 ./notdll.sh /mingw32/lib/*.dll.a
 ```
 
-Ql: [xxx.dll.a ‚Å‚Í‚È‚­ xxx.notdll.a ‚Ö](http://dd-kaihatsu-room.blogspot.jp/2018/04/xxxdlla-xxxnotdlla.html)
+å‚è€ƒ: [xxx.dll.a ã§ã¯ãªã xxx.notdll.a ã¸](http://dd-kaihatsu-room.blogspot.jp/2018/04/xxxdlla-xxxnotdlla.html)
 
-–‘O‚É‚È‚«‚à‚Ì‚É‚·‚é:
+äº‹å‰ã«ãªãã‚‚ã®ã«ã™ã‚‹:
 ```
 "C:\msys32\mingw32\lib\gcc\i686-w64-mingw32\6.2.0\-libstdc++.dll.a"
 "C:\msys32\mingw32\i686-w64-mingw32\lib\-libpthread.dll.a" 
 "C:\msys32\mingw32\i686-w64-mingw32\lib\-libwinpthread.dll.a"
 ```
 
-### `undefined reference to '_imp____acrt_iob_func'` ‚É‚Â‚«‚Ü‚µ‚Ä
+### `undefined reference to '_imp____acrt_iob_func'` ã«ã¤ãã¾ã—ã¦
 
-https://github.com/HiraokaHyperTools/libacrt_iob_func
+<s>https://github.com/HiraokaHyperTools/libacrt_iob_func</s> ã¯ä¸è¦ã«ãªã‚Šã¾ã—ãŸã€‚
 
-### cygcheck ‚ğ‚·‚é‚Æ `lib*.dll` ‚É‚Â‚È‚ª‚Á‚Ä‚¢‚Ü‚·
+### cygcheck ã‚’ã™ã‚‹ã¨ `lib*.dll` ã«ã¤ãªãŒã£ã¦ã„ã¾ã™
 
 ```txt
   C:\msys32\mingw32\bin\libopenjp2-7.dll
@@ -87,7 +90,7 @@ https://github.com/HiraokaHyperTools/libacrt_iob_func
       C:\msys32\mingw32\bin\libwinpthread-1.dll
 ```
 
-•Ï‚ÉŠæ’£‚é‚Æ‚±‚¤‚È‚è‚Ü‚µ‚½ «
+å¤‰ã«é ‘å¼µã‚‹ã¨ã“ã†ãªã‚Šã¾ã—ãŸ â†“
 
 ```txt
 [ 62%] Linking CXX executable pdfunite.exe
@@ -96,14 +99,14 @@ D:/Git/poppler/poppler/JPEG2000Stream.cc:98: undefined reference to `_imp__opj_i
 D:/Git/poppler/poppler/JPEG2000Stream.cc:98: undefined reference to `_imp__opj_image_destroy@4'
 ```
 
-‘Îô•Ò‚Å‚·B
+å¯¾ç­–ç·¨ã§ã™ã€‚
 
-#### ${OpenJPEG_LIBRARIES} ‚É‚µ‚Ü‚·
+#### ${OpenJPEG_LIBRARIES} ã«ã—ã¾ã™
 
-`utils/CMakeFiles/pdfunite.dir/build.make` ‚ğŠm”F‚µ‚½‚Æ‚±‚ëA
-openjp2 ‚¾‚¯ƒ_ƒCƒŒƒNƒg‚É `/mingw32/lib/libopenjp2.dll.a` ‚ğQÆ‚µ‚Ä‚¢‚Ü‚µ‚½B
+`utils/CMakeFiles/pdfunite.dir/build.make` ã‚’ç¢ºèªã—ãŸã¨ã“ã‚ã€
+openjp2 ã ã‘ãƒ€ã‚¤ãƒ¬ã‚¯ãƒˆã« `/mingw32/lib/libopenjp2.dll.a` ã‚’å‚ç…§ã—ã¦ã„ã¾ã—ãŸã€‚
 
-‚»‚±‚ÅA
+ãã“ã§ã€
 
 ```txt
 if (OpenJPEG_FOUND)
@@ -113,7 +116,7 @@ if (OpenJPEG_FOUND)
   set(poppler_LIBS ${poppler_LIBS} openjp2)
 ```
 
-ª ‚±‚ê‚ğ « ‚±‚¤‚µ‚Ü‚µ‚½B
+â†‘ ã“ã‚Œã‚’ â†“ ã“ã†ã—ã¾ã—ãŸã€‚
 
 ```txt
 if (OpenJPEG_FOUND)
@@ -123,13 +126,13 @@ if (OpenJPEG_FOUND)
   set(poppler_LIBS ${poppler_LIBS} ${OpenJPEG_LIBRARIES})
 ```
 
-#### section .text ‚É‚µ‚Ü‚µ‚½
+#### section .text ã«ã—ã¾ã—ãŸ
 
-ƒCƒ“ƒ|[ƒgƒ‰ƒCƒuƒ‰ƒŠ‚ğ”äŠr‚·‚é‚Ì‚É `objdump -p` ‚Å‚Í”»•Ê‚Å‚«‚Ü‚¹‚ñ‚Å‚µ‚½‚ªc
+ã‚¤ãƒ³ãƒãƒ¼ãƒˆãƒ©ã‚¤ãƒ–ãƒ©ãƒªã‚’æ¯”è¼ƒã™ã‚‹ã®ã« `objdump -p` ã§ã¯åˆ¤åˆ¥ã§ãã¾ã›ã‚“ã§ã—ãŸãŒâ€¦
 
-`nm` ‚Å”äŠr‚µ‚½‚Æ‚±‚ëAƒVƒ“ƒ{ƒ‹ƒ^ƒCƒv‚Ì‘Šˆá‚É‹C‚ª•t‚«‚Ü‚µ‚½B
+`nm` ã§æ¯”è¼ƒã—ãŸã¨ã“ã‚ã€ã‚·ãƒ³ãƒœãƒ«ã‚¿ã‚¤ãƒ—ã®ç›¸é•ã«æ°—ãŒä»˜ãã¾ã—ãŸã€‚
 
-`__imp__opj_decode@12` ‚ÌƒVƒ“ƒ{ƒ‹ƒ^ƒCƒv‚Í `T` text section ‚Æ‚È‚Á‚Ä‚¢‚Ü‚· «
+`__imp__opj_decode@12` ã®ã‚·ãƒ³ãƒœãƒ«ã‚¿ã‚¤ãƒ—ã¯ `T` text section ã¨ãªã£ã¦ã„ã¾ã™ â†“
 
 ```txt
 $ nm /mingw32/lib/libopenjp2.dll.a | grep "opj_decode"
@@ -147,9 +150,9 @@ $ nm /mingw32/lib/libopenjp2.notdll.a  | grep "opj_decode"
          U _opj_decode_tile_data
 ```
 
-ª `section .text` ‚ğéŒ¾‚µ‚Ü‚¹‚ñB `__imp__opj_decode@12` ‚Í–¾‚ç‚©‚É `U` undefined ‚Å‚·B
+â†‘ `section .text` ã‚’å®£è¨€ã—ã¾ã›ã‚“ã€‚ `__imp__opj_decode@12` ã¯æ˜ã‚‰ã‹ã« `U` undefined ã§ã™ã€‚
 
-« `section .text` ‚ğéŒ¾‚µ‚Ü‚·B `__imp__opj_decode@12` ‚Í `T` text section ‚É•Ï‰»‚µ‚Ü‚µ‚½B
+â†“ `section .text` ã‚’å®£è¨€ã—ã¾ã™ã€‚ `__imp__opj_decode@12` ã¯ `T` text section ã«å¤‰åŒ–ã—ã¾ã—ãŸã€‚
 
 ```txt
 $ nm /mingw32/lib/libopenjp2.notdll.a  | grep "opj_decode"
