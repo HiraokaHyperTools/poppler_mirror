@@ -19,18 +19,19 @@ https://www.msys2.org/ にて `msys2-i686-20161025.exe` をダウンロードし
 ### MinGW 環境構築
 
 ```sh
-pacman -S mingw32/mingw-w64-i686-freetype
-pacman -S mingw32/mingw-w64-i686-gcc
-pacman -S mingw32/mingw-w64-i686-make
-pacman -S msys/make
-pacman -S mingw32/mingw-w64-i686-libjpeg-turbo
-pacman -S mingw32/mingw-w64-i686-openjpeg2
-pacman -S mingw32/mingw-w64-i686-cmake
-pacman -S mingw32/mingw-w64-i686-pkg-config
-pacman -S mingw32/mingw-w64-i686-jsoncpp
-pacman -S mingw32/mingw-w64-i686-cairo
-pacman -S mingw32/mingw-w64-i686-boost
-pacman -S mingw32/mingw-w64-i686-nasm
+pacman -S \
+ mingw32/mingw-w64-i686-boost \
+ mingw32/mingw-w64-i686-cairo \
+ mingw32/mingw-w64-i686-cmake \
+ mingw32/mingw-w64-i686-freetype \
+ mingw32/mingw-w64-i686-gcc \
+ mingw32/mingw-w64-i686-jsoncpp \
+ mingw32/mingw-w64-i686-libjpeg-turbo \
+ mingw32/mingw-w64-i686-make \
+ mingw32/mingw-w64-i686-nasm \
+ mingw32/mingw-w64-i686-openjpeg2 \
+ mingw32/mingw-w64-i686-pkg-config \
+ msys/make
 ```
 
 ### openjpeg ≠ openjpeg2
