@@ -512,7 +512,7 @@ private:
 // FileStream
 //------------------------------------------------------------------------
 
-#define fileStreamBufSize 256
+#define fileStreamBufSize 16384
 
 class FileStream: public BaseStream {
 public:
