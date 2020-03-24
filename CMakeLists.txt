@@ -512,6 +512,7 @@ set(poppler_LIBS ${poppler_LIBS}
   libzstd.notdll.a
   libpixman-1.notdll.a
   libfreetype.notdll.a
+  dwrite
   )
 
 if (GPERF AND RUN_GPERF_IF_PRESENT)
