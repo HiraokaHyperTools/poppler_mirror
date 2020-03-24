@@ -6,9 +6,16 @@ MSYS2 を使用します。
 ## ビルド手順
 
 ```sh
-mkdir mingw32
-cd mingw32
-cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON ..
+mkdir build
+cd build
+cmake -G "MSYS Makefiles" \
+ -D CMAKE_INSTALL_PREFIX=~/poppler-release \
+ -D CMAKE_BUILD_TYPE=Release \
+ -D BUILD_CPP_TESTS:BOOL=OFF \
+ -D ENABLE_QT5:BOOL=OFF \
+ -D ENABLE_GLIB:BOOL=OFF \
+ -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON \
+ ..
 make
 ```
 
