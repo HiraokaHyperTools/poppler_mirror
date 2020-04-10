@@ -2,9 +2,11 @@
 
 set -eux
 
-rm -rf build
+cd $BinariesDirectory
 mkdir build
 cd build
+
+rm utils/*.exe || true
 
 cmake -G "MSYS Makefiles" \
   -D CMAKE_INSTALL_PREFIX=~/poppler-release \
@@ -15,7 +17,7 @@ cmake -G "MSYS Makefiles" \
   -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON \
   -DFREETYPE_LIBRARY=/mingw32/lib/libfreetype.a \
   -DFREETYPE_INCLUDE_DIRS=/mingw32/include/freetype2 \
-  ..
+  $SourcesDirectory
 
 make
 

@@ -3,24 +3,30 @@
 # Add steps that publish test results, save build artifacts, deploy, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/apps/c-cpp/gcc
 
+# HKEY_USERS\S-1-5-20\Environment!Path
+# - `%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;C:\msys32`
+
 trigger:
 - master+static-0920+pdftopngs
 
 steps:
 - task: CmdLine@2
+  env:
+    BinariesDirectory: $(Build.BinariesDirectory)
+    SourcesDirectory: $(Build.SourcesDirectory)
   inputs:
     script: |
       msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh
 
 - task: CopyFiles@2
   inputs:
-    SourceFolder: '$(Build.SourcesDirectory)'
-    Contents: 'utils\*.exe'
+    Contents: |
+      $(Build.BinariesDirectory)\build\utils\*.exe
     TargetFolder: '$(Build.ArtifactStagingDirectory)'
     flattenFolders: true
 
 - task: PublishBuildArtifacts@1
   inputs:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-    ArtifactName: 'drop'
+    ArtifactName: 'win32-static'
     publishLocation: 'Container'
