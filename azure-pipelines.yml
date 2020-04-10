@@ -7,11 +7,13 @@ trigger:
 - master+static-0920+pdftopngs
 
 steps:
-- task: CmdLine@2
+- task: Bash@3
   inputs:
+    targetType: 'inline'
     script: |
-      path %path%;H:\Program Files\CMake\bin
-      mkdir build
-      cd build
-      cmake -G "MSYS Makefiles"  -D BUILD_CPP_TESTS:BOOL=OFF -D ENABLE_QT5:BOOL=OFF -D ENABLE_GLIB:BOOL=OFF -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON ..
-      make
+      # Write your commands here
+      
+      echo 'Hello world'
+      uname -a
+      mount
+
