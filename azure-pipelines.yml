@@ -17,14 +17,14 @@ steps:
     SourcesDirectory: $(Build.SourcesDirectory)
   inputs:
     script: |
-      msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh x86
-      msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64 || true
+      call msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh x86
+      call msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64 || true
 
 - task: CopyFiles@2
   displayName: Copy poppler
   inputs:
-    Contents: |
-      $(Build.BinariesDirectory)\poppler-release\**
+    SourceFolder: '$(Build.BinariesDirectory)\poppler-release'
+    Contents: '**'
     TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
 - task: PublishBuildArtifacts@1
