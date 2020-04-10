@@ -18,3 +18,5 @@ cmake -G "MSYS Makefiles" \
   ..
 
 make
+
+strip utils/*.exe

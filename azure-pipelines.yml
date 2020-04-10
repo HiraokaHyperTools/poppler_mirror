@@ -11,3 +11,16 @@ steps:
   inputs:
     script: |
       msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh
+
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: '$(Build.SourcesDirectory)'
+    Contents: 'utils\*.exe'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    flattenFolders: true
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
