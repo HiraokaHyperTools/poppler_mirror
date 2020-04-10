@@ -11,22 +11,24 @@ trigger:
 
 steps:
 - task: CmdLine@2
+  displayName: Build poppler
   env:
     BinariesDirectory: $(Build.BinariesDirectory)
     SourcesDirectory: $(Build.SourcesDirectory)
   inputs:
     script: |
-      msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh
+      msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh x86
+      msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64 || true
 
 - task: CopyFiles@2
+  displayName: Copy poppler
   inputs:
     Contents: |
-      $(Build.BinariesDirectory)\build\utils\*.exe
+      $(Build.BinariesDirectory)\poppler-release\**
     TargetFolder: '$(Build.ArtifactStagingDirectory)'
-    flattenFolders: true
 
 - task: PublishBuildArtifacts@1
   inputs:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-    ArtifactName: 'win32-static'
+    ArtifactName: 'win32-static-release'
     publishLocation: 'Container'

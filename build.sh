@@ -1,24 +1,22 @@
 #!/bin/bash
 
+if [ -z "$1" ]; then echo "Specify variant"; exit 1; fi
+
 set -eux
 
-cd $BinariesDirectory
-mkdir build
-cd build
+mkdir -p $BinariesDirectory/poppler-build/$1 && cd "$_"
 
-rm utils/*.exe || true
+rm -rf $BinariesDirectory/poppler-release/$1 || true
 
 cmake -G "MSYS Makefiles" \
-  -D CMAKE_INSTALL_PREFIX=~/poppler-release \
+  -D CMAKE_INSTALL_PREFIX=$BinariesDirectory/poppler-release/$1 \
   -D CMAKE_BUILD_TYPE=Release \
   -D BUILD_CPP_TESTS:BOOL=OFF \
   -D ENABLE_QT5:BOOL=OFF \
   -D ENABLE_GLIB:BOOL=OFF \
   -D ENABLE_ZLIB_UNCOMPRESS:BOOL=ON \
-  -DFREETYPE_LIBRARY=/mingw32/lib/libfreetype.a \
-  -DFREETYPE_INCLUDE_DIRS=/mingw32/include/freetype2 \
   $SourcesDirectory
 
-make
+make install
 
-strip utils/*.exe
+find $BinariesDirectory/poppler-release -name "*.exe" -print -exec strip {} \;

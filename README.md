@@ -41,6 +41,22 @@ pacman -S \
  msys/make
 ```
 
+```sh
+pacman -S \
+ mingw64/mingw-w64-x86_64-boost \
+ mingw64/mingw-w64-x86_64-cairo \
+ mingw64/mingw-w64-x86_64-cmake \
+ mingw64/mingw-w64-x86_64-freetype \
+ mingw64/mingw-w64-x86_64-gcc \
+ mingw64/mingw-w64-x86_64-jsoncpp \
+ mingw64/mingw-w64-x86_64-libjpeg-turbo \
+ mingw64/mingw-w64-x86_64-make \
+ mingw64/mingw-w64-x86_64-nasm \
+ mingw64/mingw-w64-x86_64-openjpeg2 \
+ mingw64/mingw-w64-x86_64-pkg-config \
+ msys/make
+```
+
 ### openjpeg ≠ openjpeg2
 
 CMakeLists.txt にて、あたかも `OpenJPEG` が `openjpeg2` と同一であるかのような仮定がなされているので、その対策です。
