@@ -10,6 +10,8 @@ steps:
 - task: Bash@3
   inputs:
     targetType: 'inline'
+    noProfile: false
+    noRc: false
     script: |
       rm -rf build
       mkdir build
