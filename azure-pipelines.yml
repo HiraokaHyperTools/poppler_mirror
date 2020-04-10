@@ -10,6 +10,11 @@ trigger:
 - master+static-0920+pdftopngs
 
 steps:
+- task: DeleteFiles@1
+  inputs:
+    SourceFolder: '$(Build.BinariesDirectory)'
+    Contents: 'poppler-release'
+
 - task: CmdLine@2
   displayName: Build poppler
   env:

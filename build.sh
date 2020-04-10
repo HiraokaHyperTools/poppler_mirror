@@ -6,8 +6,6 @@ set -eux
 
 mkdir -p $BinariesDirectory/poppler-build/$1 && cd "$_"
 
-rm -rf $BinariesDirectory/poppler-release/$1 || true
-
 cmake -G "MSYS Makefiles" \
   -D CMAKE_INSTALL_PREFIX=$BinariesDirectory/poppler-release/$1 \
   -D CMAKE_BUILD_TYPE=Release \
@@ -19,4 +17,4 @@ cmake -G "MSYS Makefiles" \
 
 make install
 
-find $BinariesDirectory/poppler-release -name "*.exe" -print -exec strip {} \;
+find $BinariesDirectory/poppler-release/$1 -name "*.exe" -print -exec strip {} \;
