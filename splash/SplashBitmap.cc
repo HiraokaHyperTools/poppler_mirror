@@ -337,7 +337,7 @@ SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, const char 
   FILE *f;
   SplashError e;
 
-  if (!(f = openFile(fileName, params->appendTiff ? "r+b" : "wb"))) {
+  if (!(f = openFile(fileName, (params != nullptr && params->appendTiff) ? "r+b" : "wb"))) {
     return splashErrOpenFile;
   }
 
