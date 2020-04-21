@@ -7,7 +7,7 @@
 # - `%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;C:\msys32`
 
 trigger:
-- master+static-0920+pdftopngs
+- dev-ng
 
 steps:
 - task: DeleteFiles@1
