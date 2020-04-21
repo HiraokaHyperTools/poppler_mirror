@@ -150,7 +150,7 @@ const QPicture& ArthurType3Font::getGlyph(int gid) const
 
 ArthurOutputDev::ArthurOutputDev(QPainter *painter):
   m_lastTransparencyGroupPicture(nullptr),
-  m_fontHinting(NoHinting)
+  m_hintingPreference(QFont::PreferDefaultHinting)
 {
   m_painter.push(painter);
   m_currentBrush = QBrush(Qt::SolidPattern);
@@ -481,7 +481,7 @@ void ArthurOutputDev::updateFont(GfxState *state)
         int fontDataLen;
         const char* fontData = gfxFont->readEmbFontFile(xref, &fontDataLen);
 
-        m_rawFont = new QRawFont(QByteArray(fontData, fontDataLen), fontSize);
+        m_rawFont = new QRawFont(QByteArray(fontData, fontDataLen), fontSize, m_hintingPreference);
         m_rawFontCache.insert(std::make_pair(fontID,std::unique_ptr<QRawFont>(m_rawFont)));
 
         // Free the font data, it was copied in the QByteArray constructor
@@ -490,7 +490,7 @@ void ArthurOutputDev::updateFont(GfxState *state)
       }
       case gfxFontLocExternal:{ // font is in an external font file
         QString fontFile(fontLoc->path->c_str());
-        m_rawFont = new QRawFont(fontFile, fontSize);
+        m_rawFont = new QRawFont(fontFile, fontSize, m_hintingPreference);
         m_rawFontCache.insert(std::make_pair(fontID,std::unique_ptr<QRawFont>(m_rawFont)));
         break;
       }
@@ -767,6 +767,7 @@ bool ArthurOutputDev::axialShadedFill(GfxState *state, GfxAxialShading *shading,
 
   // Number of color space components
   auto nComps = shading->getColorSpace()->getNComps();
+  auto opacity = state->getFillOpacity();
 
   // Helper function to test two color objects for 'almost-equality'
   auto isSameGfxColor = [&nComps,&colorDelta](const GfxColor &colorA, const GfxColor &colorB)
@@ -807,7 +808,7 @@ bool ArthurOutputDev::axialShadedFill(GfxState *state, GfxAxialShading *shading,
 
   GfxRGB rgb;
   shading->getColorSpace()->getRGB(&color0, &rgb);
-  QColor qColor(colToByte(rgb.r), colToByte(rgb.g), colToByte(rgb.b));
+  QColor qColor(colToByte(rgb.r), colToByte(rgb.g), colToByte(rgb.b), dblToByte(opacity));
   gradient.setColorAt(0,qColor);
 
   // Look for more relevant parameter values by bisection
@@ -847,7 +848,7 @@ bool ArthurOutputDev::axialShadedFill(GfxState *state, GfxAxialShading *shading,
 
     // set the color
     shading->getColorSpace()->getRGB(&color1, &rgb);
-    qColor.setRgb(colToByte(rgb.r), colToByte(rgb.g), colToByte(rgb.b));
+    qColor.setRgb(colToByte(rgb.r), colToByte(rgb.g), colToByte(rgb.b), dblToByte(opacity));
     gradient.setColorAt((ta[j] - tMin)/(tMax - tMin), qColor);
 
     // Move to the next parameter region
@@ -879,6 +880,24 @@ void ArthurOutputDev::clip(GfxState *state)
 void ArthurOutputDev::eoClip(GfxState *state)
 {
   m_painter.top()->setClipPath(convertPath( state, state->getPath(), Qt::OddEvenFill ), Qt::IntersectClip );
+}
+
+void ArthurOutputDev::clipToStrokePath(GfxState *state)
+{
+  QPainterPath clipPath = convertPath( state, state->getPath(), Qt::WindingFill );
+
+  // Get the outline of 'clipPath' as a separate path
+  QPainterPathStroker stroker;
+  stroker.setWidth( state->getLineWidth() );
+  stroker.setCapStyle( m_currentPen.capStyle() );
+  stroker.setJoinStyle( m_currentPen.joinStyle() );
+  stroker.setMiterLimit( state->getMiterLimit() );
+  stroker.setDashPattern( m_currentPen.dashPattern() );
+  stroker.setDashOffset( m_currentPen.dashOffset() );
+  QPainterPath clipPathOutline = stroker.createStroke ( clipPath );
+
+  // The interior of the outline is the desired clipping region
+  m_painter.top()->setClipPath(clipPathOutline, Qt::IntersectClip );
 }
 
 void ArthurOutputDev::drawChar(GfxState *state, double x, double y,
