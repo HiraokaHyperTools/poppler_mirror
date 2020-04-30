@@ -29,6 +29,13 @@ steps:
       call msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh x86
       call msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64 || true
 
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'test'
+    projects: |
+      **/tester.csproj
+    arguments: ''
+
 - task: CopyFiles@2
   displayName: Copy poppler
   inputs:
