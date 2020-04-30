@@ -31,8 +31,11 @@ steps:
 
 - task: DotNetCoreCLI@2
   env:
-    BinariesDirectory: $(Build.BinariesDirectory)
-    SourcesDirectory: $(Build.SourcesDirectory)
+    pdftoppmexe: '$(Build.BinariesDirectory)\poppler-release\x86\bin\pdftoppm.exe'
+    pdfattachexe: '$(Build.BinariesDirectory)\poppler-release\x86\bin\pdfattach.exe'
+    pdftocairoexe: '$(Build.BinariesDirectory)\poppler-release\x86\bin\pdftocairo.exe'
+    ind: '$(Build.SourcesDirectory)\utils\tester\in'
+    outd: '$(Build.BinariesDirectory)\out'
   inputs:
     command: 'test'
     projects: |

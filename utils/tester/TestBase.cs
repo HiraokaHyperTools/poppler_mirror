@@ -1,48 +1,67 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 
 namespace tester
 {
     public class TestBase
     {
-        protected string BinariesDirectory =>
-            Environment.GetEnvironmentVariable("BinariesDirectory");
-        protected string bin32 =>
-            Path.Combine(BinariesDirectory, "poppler-release", "x86", "bin");
-        protected string pdftoppm32 =>
-            Path.Combine(bin32, "pdftoppm.exe");
+        private string pdftoppmExe => Resolve("%pdftoppmexe%");
+        private string pdfattachExe => Resolve("%pdfattachexe%");
+        private string pdftocairoExe => Resolve("%pdftocairoexe%");
+        private string workDir = null;
 
-        protected string SourcesDirectory =>
-            Environment.GetEnvironmentVariable("SourcesDirectory");
-        protected string tester =>
-            Path.Combine(SourcesDirectory, "utils", "tester");
-
-        protected void RunPdftoppm(
-            string args
-        )
+        protected string Resolve(string path, bool mkdirAndCwd = false)
         {
-            RunCmd(pdftoppm32, args);
+            var fullPath = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory, // fallback
+                Environment.ExpandEnvironmentVariables(path)
+            );
+            if (mkdirAndCwd)
+            {
+                Directory.CreateDirectory(fullPath);
+                workDir = fullPath;
+            }
+            return fullPath;
         }
 
-        protected void RunCmd(
+        protected string Mkdir(string path)
+        {
+            return Resolve(path, true);
+        }
+
+        protected void pdftoppm(params string[] args)
+        {
+            RunCmd(
+                pdftoppmExe,
+                string.Join(
+                    " ",
+                    args.Select(arg => "\"" + arg + "\"")
+                )
+            );
+        }
+
+        protected int RunCmd(
             string exe,
-            string args
+            string args,
+            int exitCode = 0
         )
         {
-            args = args.Replace("@tester", tester);
+            args = Environment.ExpandEnvironmentVariables(args);
             var psi = new ProcessStartInfo(exe, args)
             {
                 UseShellExecute = false,
-                WorkingDirectory = TestContext.CurrentContext.WorkDirectory,
+                WorkingDirectory = workDir ?? TestContext.CurrentContext.WorkDirectory,
             };
             var p = Process.Start(psi);
             p.WaitForExit();
-            if (p.ExitCode != 0)
+            if (p.ExitCode != exitCode)
             {
-                throw new Exception($"ExitCode: {p.ExitCode}\nexe: {exe}\nargs: {args}");
+                throw new Exception($"Unexpected ExitCode: {p.ExitCode} ≠ {exitCode} (expected)\n exe: {exe}\nargs: {args}");
             }
+            return p.ExitCode;
         }
 
         [SetUp]
@@ -54,11 +73,19 @@ namespace tester
         [Test]
         public void Test1()
         {
-            RunPdftoppm("\"@tester/pdfs/pages.pdf\" out01-ppm");
-            RunPdftoppm("-png \"@tester/pdfs/pages.pdf\" out01-png");
-            RunPdftoppm("-jpeg \"@tester/pdfs/pages.pdf\" out01-jpeg");
-            RunPdftoppm("-tiff \"@tester/pdfs/pages.pdf\" out01-tiff");
+            var dir = Mkdir("%outd%/01");
+            pdftoppm("-r", "10", "%ind%/pdfs/pages.pdf", "ppm");
+            pdftoppm("-r", "10", "-png", "%ind%/pdfs/pages.pdf", "png");
+            pdftoppm("-r", "10", "-jpeg", "%ind%/pdfs/pages.pdf", "jpeg");
+            pdftoppm("-r", "10", "-tiff", "%ind%/pdfs/pages.pdf", "tiff");
             Assert.Pass();
+        }
+
+        [Test]
+        public void TestCommands()
+        {
+            RunCmd(pdfattachExe, "", exitCode: 99);
+            RunCmd(pdftocairoExe, "", exitCode: 99);
         }
     }
 }
