@@ -30,6 +30,9 @@ steps:
       call msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64 || true
 
 - task: DotNetCoreCLI@2
+  env:
+    BinariesDirectory: $(Build.BinariesDirectory)
+    SourcesDirectory: $(Build.SourcesDirectory)
   inputs:
     command: 'test'
     projects: |
