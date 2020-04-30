@@ -9,6 +9,10 @@
 trigger:
 - dev-ng
 
+pool:
+ demands:
+ - POPPLER_WIN32_BUILDER -equals 1
+
 steps:
 - task: DeleteFiles@1
   inputs:
