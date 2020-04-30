@@ -37,6 +37,7 @@ steps:
     outd: '$(Build.BinariesDirectory)\out32'
   inputs:
     command: 'test'
+    testRunTitle: 'for x86'
     projects: |
       **/tester.csproj
     arguments: '-c Debug32'
@@ -59,6 +60,7 @@ steps:
     outd: '$(Build.BinariesDirectory)\out64'
   inputs:
     command: 'test'
+    testRunTitle: 'for x64'
     projects: |
       **/tester.csproj
     arguments: '-c Debug64'
