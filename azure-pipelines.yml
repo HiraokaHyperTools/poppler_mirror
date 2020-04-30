@@ -20,14 +20,13 @@ steps:
     Contents: 'poppler-release'
 
 - task: CmdLine@2
-  displayName: Build poppler
+  displayName: Build poppler x86
   env:
     BinariesDirectory: $(Build.BinariesDirectory)
     SourcesDirectory: $(Build.SourcesDirectory)
   inputs:
     script: |
       call msys2_shell.cmd -mingw32 -defterm -here -no-start build.sh x86
-      call msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64 || true
 
 - task: DotNetCoreCLI@2
   env:
@@ -35,12 +34,34 @@ steps:
     pdfattachexe: '$(Build.BinariesDirectory)\poppler-release\x86\bin\pdfattach.exe'
     pdftocairoexe: '$(Build.BinariesDirectory)\poppler-release\x86\bin\pdftocairo.exe'
     ind: '$(Build.SourcesDirectory)\utils\tester\in'
-    outd: '$(Build.BinariesDirectory)\out'
+    outd: '$(Build.BinariesDirectory)\out32'
   inputs:
     command: 'test'
     projects: |
       **/tester.csproj
-    arguments: ''
+    arguments: '-c Debug32'
+
+- task: CmdLine@2
+  displayName: Build poppler x64
+  env:
+    BinariesDirectory: $(Build.BinariesDirectory)
+    SourcesDirectory: $(Build.SourcesDirectory)
+  inputs:
+    script: |
+      call msys2_shell.cmd -mingw64 -defterm -here -no-start build.sh x64
+
+- task: DotNetCoreCLI@2
+  env:
+    pdftoppmexe: '$(Build.BinariesDirectory)\poppler-release\x64\bin\pdftoppm.exe'
+    pdfattachexe: '$(Build.BinariesDirectory)\poppler-release\x64\bin\pdfattach.exe'
+    pdftocairoexe: '$(Build.BinariesDirectory)\poppler-release\x64\bin\pdftocairo.exe'
+    ind: '$(Build.SourcesDirectory)\utils\tester\in'
+    outd: '$(Build.BinariesDirectory)\out64'
+  inputs:
+    command: 'test'
+    projects: |
+      **/tester.csproj
+    arguments: '-c Debug64'
 
 - task: CopyFiles@2
   displayName: Copy poppler
