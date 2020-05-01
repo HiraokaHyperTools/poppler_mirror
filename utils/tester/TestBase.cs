@@ -78,7 +78,19 @@ namespace tester
             pdftoppm("-r", "10", "-png", "%ind%/pdfs/pages.pdf", "png");
             pdftoppm("-r", "10", "-jpeg", "%ind%/pdfs/pages.pdf", "jpeg");
             pdftoppm("-r", "10", "-tiff", "%ind%/pdfs/pages.pdf", "tiff");
-            Assert.Pass();
+            
+            Assert.That(Path.Combine(dir, "jpeg-1.jpg"), Does.Exist);
+            Assert.That(Path.Combine(dir, "jpeg-2.jpg"), Does.Exist);
+            Assert.That(Path.Combine(dir, "jpeg-3.jpg"), Does.Exist);
+            Assert.That(Path.Combine(dir, "png-1.png"), Does.Exist);
+            Assert.That(Path.Combine(dir, "png-2.png"), Does.Exist);
+            Assert.That(Path.Combine(dir, "png-3.png"), Does.Exist);
+            Assert.That(Path.Combine(dir, "ppm-1.ppm"), Does.Exist);
+            Assert.That(Path.Combine(dir, "ppm-2.ppm"), Does.Exist);
+            Assert.That(Path.Combine(dir, "ppm-3.ppm"), Does.Exist);
+            Assert.That(Path.Combine(dir, "tiff-1.tif"), Does.Exist);
+            Assert.That(Path.Combine(dir, "tiff-2.tif"), Does.Exist);
+            Assert.That(Path.Combine(dir, "tiff-3.tif"), Does.Exist);
         }
 
         [Test]
