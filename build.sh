@@ -17,4 +17,6 @@ cmake -G "MSYS Makefiles" \
 
 make install
 
+find $BinariesDirectory/poppler-release/$1 -name "*.exe" -print0 | xargs -0 -r -n1 ./is-static-link.sh
+
 find $BinariesDirectory/poppler-release/$1 -name "*.exe" -print -exec strip {} \;
