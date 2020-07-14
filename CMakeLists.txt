@@ -1,6 +1,6 @@
 project(poppler)
 
-cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.5.0 FATAL_ERROR)
 
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 
@@ -36,7 +36,7 @@ if (ECM_FOUND)
 endif()
 
 set(POPPLER_MAJOR_VERSION "0")
-set(POPPLER_MINOR_VERSION "89")
+set(POPPLER_MINOR_VERSION "90")
 set(POPPLER_MICRO_VERSION "0")
 set(POPPLER_VERSION "${POPPLER_MAJOR_VERSION}.${POPPLER_MINOR_VERSION}.${POPPLER_MICRO_VERSION}")
 
@@ -149,7 +149,7 @@ else()
 endif()
 
 if (ENABLE_QT5)
-  find_package(Qt5Core)
+  find_package(Qt5Core 5.5)  # Update QT_DISABLE_DEPRECATED_BEFORE in qt5/CMakeLists.txt when increasing this
   find_package(Qt5Gui)
   find_package(Qt5Xml)
   find_package(Qt5Widgets)
@@ -365,6 +365,7 @@ set(poppler_SRCS
   poppler/Hints.cc
   poppler/JArithmeticDecoder.cc
   poppler/JBIG2Stream.cc
+  poppler/JSInfo.cc
   poppler/Lexer.cc
   poppler/Link.cc
   poppler/Linearization.cc
@@ -454,7 +455,11 @@ if(ENABLE_LIBCURL)
     poppler/CurlCachedFile.cc
     poppler/CurlPDFDocBuilder.cc
   )
-  set(poppler_LIBS ${poppler_LIBS} ${CURL_LIBRARIES})
+  if(${CMAKE_VERSION} VERSION_LESS "3.12.0")
+    set(poppler_LIBS ${poppler_LIBS} ${CURL_LIBRARIES})
+  else()
+    set(poppler_LIBS ${poppler_LIBS} CURL::libcurl)
+  endif()
 endif()
 if (ENABLE_NSS3)
   set(poppler_SRCS ${poppler_SRCS}
@@ -557,7 +562,7 @@ add_library(poppler STATIC ${poppler_SRCS})
 else()
 add_library(poppler STATIC ${poppler_SRCS})
 endif()
-set_target_properties(poppler PROPERTIES VERSION 100.0.0 SOVERSION 100)
+set_target_properties(poppler PROPERTIES VERSION 101.0.0 SOVERSION 101)
 if(MINGW AND BUILD_SHARED_LIBS)
     get_target_property(POPPLER_SOVERSION poppler SOVERSION)
     set_target_properties(poppler PROPERTIES SUFFIX "-${POPPLER_SOVERSION}${CMAKE_STATIC_LIBRARY_SUFFIX}")
@@ -593,6 +598,7 @@ if(ENABLE_UNSTABLE_API_ABI_HEADERS)
     poppler/Hints.h
     poppler/JArithmeticDecoder.h
     poppler/JBIG2Stream.h
+    poppler/JSInfo.h
     poppler/Lexer.h
     poppler/Link.h
     poppler/Linearization.h
