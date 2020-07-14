@@ -50,7 +50,7 @@ public:
     TiffWriter &operator=(const TiffWriter &other) = delete;
 
     void setCompressionString(const char *compressionStringArg);
-  void setAppend(bool append) { this->appendTiff = append; }
+    void setAppend(bool append) { this->appendTiff = append; }
 
     bool init(FILE *openedFile, int width, int height, int hDPI, int vDPI) override;
 
@@ -63,7 +63,7 @@ public:
 
 private:
     TiffWriterPrivate *priv;
-  bool appendTiff = false;
+    bool appendTiff = false;
 };
 
 #endif
