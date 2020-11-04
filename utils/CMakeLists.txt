@@ -5,6 +5,9 @@ set(common_srcs
 )
 set(common_libs
   poppler
+  libjpeg.notdll.a
+  libcurl.notdll.a
+  liblcms2.notdll.a
 )
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
