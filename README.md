@@ -102,6 +102,91 @@ cp /mingw32/lib/pkgconfig/libopenjp2.pc /mingw32/lib/pkgconfig/libopenjpeg.pc
 "C:\msys32\mingw32\i686-w64-mingw32\lib\-libwinpthread.dll.a"
 ```
 
+#### 不毛な `multiple definition of _imp__` の争いの件
+
+着目するべき `CMakeLists.txt` と `utils/CMakeLists.txt` に存在する 2 箇所の問題点:
+
+```CMakeLists.txt
+set(poppler_LIBS ${poppler_LIBS} ${LCMS2_LIBRARIES})
+```
+
+CMakeLists.txt の修正案は:
+
+```CMakeLists.txt
+set(poppler_LIBS ${poppler_LIBS} liblcms2.notdll.a)
+```
+
+その理由として CMakeCache.txt を確認:
+
+```CMakeCache.txt
+//Path to a library.
+LCMS2_LIBRARIES:FILEPATH=C:/msys32/mingw32/lib/liblcms2.dll.a
+```
+
+対策案
+
+```CMakeLists.txt
+SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+```
+
+参考: https://stackoverflow.com/a/24671474
+
+#### _imp__curl_easy_reset の抵抗
+
+結果を視認する事で `__declspec(dllimport)` 適用の嫌疑を持つ:
+
+```
+C:/msys32/mingw32/bin/../lib/gcc/i686-w64-mingw32/10.1.0/../../../../i686-w64-mingw32/bin/ld.exe: ../libpoppler-101.a(CurlCachedFile.cc.obj):CurlCachedFile.cc:(.text+0x28c): undefined reference to `_imp__curl_easy_reset'
+```
+
+curl.h を確認したい:
+
+```curl.h
+/*
+ * libcurl external API function linkage decorations.
+ */
+
+#ifdef CURL_STATICLIB
+#  define CURL_EXTERN
+#elif defined(CURL_WIN32) || defined(__SYMBIAN32__) || \
+     (__has_declspec_attribute(dllexport) && \
+      __has_declspec_attribute(dllimport))
+#  if defined(BUILDING_LIBCURL)
+#    define CURL_EXTERN  __declspec(dllexport)
+#  else
+#    define CURL_EXTERN  __declspec(dllimport)
+#  endif
+#elif defined(BUILDING_LIBCURL) && defined(CURL_HIDDEN_SYMBOLS)
+#  define CURL_EXTERN CURL_EXTERN_SYMBOL
+#else
+#  define CURL_EXTERN
+#endif
+```
+
+対策:
+
+```CMakeLists.txt
+if(MINGW)
+  add_definitions(-DCURL_STATICLIB=1)
+endif()
+```
+
+#### `poppler_LIBS` へ含んで居ても抵抗する件
+
+```
+C:/msys32/mingw32/bin/../lib/gcc/i686-w64-mingw32/10.1.0/../../../../i686-w64-mingw32/bin/ld.exe: C:/msys32/mingw32/bin/../lib/gcc/i686-w64-mingw32/10.1.0/../../../../lib\libpsl.a(libpsl_la-psl.o):(.text+0x108a): undefined reference to `_imp__WSAStringToAddressW@20'
+```
+
+該当の `libws2_32.a` を `poppler_LIBS` の末尾へ移動します:
+
+```CMakeLists.txt
+set(poppler_LIBS ${poppler_LIBS} 
+  ...
+  libws2_32.a
+  # こちらへ
+)
+```
+
 ### `undefined reference to '_imp____acrt_iob_func'` につきまして
 
 <s>https://github.com/HiraokaHyperTools/libacrt_iob_func</s> は不要になりました。

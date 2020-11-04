@@ -2,6 +2,13 @@ project(poppler)
 
 cmake_minimum_required(VERSION 3.5.0 FATAL_ERROR)
 
+if(MINGW)
+  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+  add_definitions(-DCURL_STATICLIB=1)
+  add_definitions(-DOPJ_STATIC=1)
+  add_definitions(-DNGHTTP2_STATICLIB=1)
+endif()
+
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 
 include(PopplerDefaults)
@@ -468,7 +475,7 @@ if(ENABLE_LIBCURL)
   if(${CMAKE_VERSION} VERSION_LESS "3.12.0")
     set(poppler_LIBS ${poppler_LIBS} ${CURL_LIBRARIES})
   else()
-    set(poppler_LIBS ${poppler_LIBS} CURL::libcurl)
+    set(poppler_LIBS ${poppler_LIBS} ${CURL_LIBRARIES})
   endif()
 endif()
 if (ENABLE_NSS3)
@@ -493,7 +500,7 @@ else ()
   )
 endif()
 if(USE_CMS)
-  set(poppler_LIBS ${poppler_LIBS} liblcms2.notdll.a)
+  set(poppler_LIBS ${poppler_LIBS} ${LCMS2_LIBRARIES})
 endif()
 if(WIN32)
   # use clean APIs
@@ -508,28 +515,33 @@ if(TIFF_FOUND)
   set(poppler_LIBS ${poppler_LIBS} ${TIFF_LIBRARIES})
 endif()
 set(poppler_LIBS ${poppler_LIBS} 
-  lzma 
-  bz2 
-  harfbuzz 
-  graphite2 
-  glib-2.0 
-  winmm 
-  libgettextlib.a 
-  libintl.a 
-  ws2_32 
-  libiconv.a 
-  libopenjp2.notdll.a 
   libopenjp2.a 
-  libcurl.notdll.a 
-  libgraphite2.notdll.a
+  libzstd.a
+  liblzma.a
+  libbz2.a
+  libharfbuzz.a
+  librpcrt4.a
+  libusp10.a
+  libgraphite2.a
+  libfreetype.a
+  libcrypt32.a
+  libssl.a
+  libcrypto.a
+  libpsl.a
+  libidn2.a
+  libwldap32.a
+  libssh2.a
+  libbrotlidec-static.a
+  libbrotlicommon-static.a
+  libnghttp2.notdll.a
+  libunistring.a
+  libws2_32.a
+  libintl.a
+  libiconv.a
+  libz.a
   libjpeg.a
-  usp10
-  rpcrt4
-  libzstd.notdll.a
-  libpixman-1.notdll.a
-  libfreetype.notdll.a
-  dwrite
-  )
+  # こちらへ
+)
 
 if (GPERF AND RUN_GPERF_IF_PRESENT)
     macro(ADD_GPERF_FILE input)
