@@ -7,7 +7,6 @@ set(common_libs
   poppler
   libjpeg.notdll.a
   libcurl.notdll.a
-  liblcms2.notdll.a
 )
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
@@ -20,7 +19,7 @@ if (ENABLE_SPLASH)
   add_executable(pdftoppm ${pdftoppm_SOURCES})
   target_link_libraries(pdftoppm ${common_libs})
   if(LCMS2_FOUND)
-    target_link_libraries(pdftoppm ${LCMS2_LIBRARIES})
+    target_link_libraries(pdftoppm liblcms2.notdll.a)
   endif()
   install(TARGETS pdftoppm DESTINATION bin)
   install(FILES pdftoppm.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
