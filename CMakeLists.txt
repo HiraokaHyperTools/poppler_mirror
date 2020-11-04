@@ -529,9 +529,6 @@ set(poppler_LIBS ${poppler_LIBS}
   libpixman-1.notdll.a
   libfreetype.notdll.a
   dwrite
-  libjpeg.notdll.a
-  libcurl.notdll.a
-  liblcms2.dll.a
   )
 
 if (GPERF AND RUN_GPERF_IF_PRESENT)
