@@ -493,7 +493,7 @@ else ()
   )
 endif()
 if(USE_CMS)
-  set(poppler_LIBS ${poppler_LIBS} ${LCMS2_LIBRARIES})
+  set(poppler_LIBS ${poppler_LIBS} liblcms2.notdll.a)
 endif()
 if(WIN32)
   # use clean APIs
