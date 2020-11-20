@@ -535,6 +535,7 @@ set(poppler_LIBS ${poppler_LIBS}
   libbrotlicommon-static.a
   libnghttp2.notdll.a
   libunistring.a
+  libunistring.notdll.a
   libws2_32.a
   libintl.a
   libiconv.a
