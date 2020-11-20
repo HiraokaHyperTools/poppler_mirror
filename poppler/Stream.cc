@@ -22,7 +22,7 @@
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2010 Tomas Hoger <thoger@redhat.com>
-// Copyright (C) 2011, 2012, 2016 William Bader <williambader@hotmail.com>
+// Copyright (C) 2011, 2012, 2016, 2020 William Bader <williambader@hotmail.com>
 // Copyright (C) 2012, 2013, 2020 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2012 Oliver Sander <sander@mi.fu-berlin.de>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
@@ -195,6 +195,7 @@ class BaseStreamStream : public Stream
 {
 public:
     BaseStreamStream(Stream *strA) : str(strA) { }
+    ~BaseStreamStream() override;
 
     StreamKind getKind() const override { return str->getBaseStream()->getKind(); }
     void reset() override { str->getBaseStream()->reset(); }
@@ -213,6 +214,8 @@ public:
 private:
     std::unique_ptr<Stream> str;
 };
+
+BaseStreamStream::~BaseStreamStream() = default;
 
 Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int recursion, Dict *dict)
 {
@@ -1057,6 +1060,13 @@ void CachedFileStream::moveStart(Goffset delta)
     bufPos = start;
 }
 
+MemStream::~MemStream() = default;
+
+AutoFreeMemStream::~AutoFreeMemStream()
+{
+    gfree(buf);
+}
+
 //------------------------------------------------------------------------
 // EmbedStream
 //------------------------------------------------------------------------
@@ -1069,6 +1079,7 @@ EmbedStream::EmbedStream(Stream *strA, Object &&dictA, bool limitedA, Goffset le
     reusable = reusableA;
     record = false;
     replay = false;
+    start = str->getPos();
     if (reusable) {
         bufData = (unsigned char *)gmalloc(16384);
         bufMax = 16384;
@@ -1083,13 +1094,32 @@ EmbedStream::~EmbedStream()
         gfree(bufData);
 }
 
+void EmbedStream::reset()
+{
+    if (str->getPos() != start) {
+        str->reset();
+        // Might be a FilterStream that does not support str->setPos(start)
+        while (str->getPos() < start) {
+            if (str->getChar() == EOF) {
+                break;
+            }
+        }
+        if (str->getPos() != start) {
+            error(errInternal, -1, "Failed to reset EmbedStream");
+        }
+    }
+    record = false;
+    replay = false;
+    bufPos = 0;
+}
+
 BaseStream *EmbedStream::copy()
 {
     error(errInternal, -1, "Called copy() on EmbedStream");
     return nullptr;
 }
 
-Stream *EmbedStream::makeSubStream(Goffset start, bool limitedA, Goffset lengthA, Object &&dictA)
+Stream *EmbedStream::makeSubStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA)
 {
     error(errInternal, -1, "Called makeSubStream() on EmbedStream");
     return nullptr;

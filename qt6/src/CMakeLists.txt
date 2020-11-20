@@ -33,7 +33,7 @@ set(poppler_qt6_SRCS
   poppler-page-transition.cc
   poppler-media.cc
   poppler-outline.cc
-  ArthurOutputDev.cc
+  QPainterOutputDev.cc
   poppler-version.cpp
 )
 add_library(poppler-qt6 ${poppler_qt6_SRCS})
@@ -42,7 +42,7 @@ if(MINGW AND BUILD_SHARED_LIBS)
     get_target_property(POPPLER_QT6_SOVERSION poppler-qt6 SOVERSION)
     set_target_properties(poppler-qt6 PROPERTIES SUFFIX "-${POPPLER_QT6_SOVERSION}${CMAKE_SHARED_LIBRARY_SUFFIX}")
 endif()
-target_link_libraries(poppler-qt6 poppler Qt6::Core Qt6::Gui Qt6::Xml ${FREETYPE_LIBRARIES})
+target_link_libraries(poppler-qt6 poppler Qt6::Core Qt6::Gui ${FREETYPE_LIBRARIES})
 if(MSVC)
 target_link_libraries(poppler-qt6 poppler ${poppler_LIBS})
 endif()

@@ -16,7 +16,7 @@
  * Copyright (C) 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
  * Copyright (C) 2013 Anthony Granger <grangeranthony@gmail.com>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
- * Copyright (C) 2017 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2017, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  * Copyright (C) 2017, 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
  * Copyright (C) 2018 Nelson Benítez León <nbenitezl@gmail.com>
  * Copyright (C) 2019 Jan Grulich <jgrulich@redhat.com>
@@ -48,8 +48,8 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QDateTime>
+#include <QtCore/QIODevice>
 #include <QtCore/QSet>
-#include <QtXml/QDomDocument>
 #include "poppler-export.h"
 
 class EmbFile;
@@ -668,7 +668,7 @@ rather unexpected results.
 
        \returns whether the painting succeeded
 
-       \note This method is only supported for Arthur
+       \note This method is only supported for the QPainterOutputDev
     */
     bool renderToPainter(QPainter *painter, double xres = 72.0, double yres = 72.0, int x = -1, int y = -1, int w = -1, int h = -1, Rotation rotate = Rotate0, PainterFlags flags = NoPainterFlags) const;
 
@@ -1083,7 +1083,7 @@ public:
     enum RenderBackend
     {
         SplashBackend, ///< Splash backend
-        ArthurBackend ///< Arthur (Qt) backend
+        QPainterBackend ///< Qt backend
     };
 
     /**
@@ -1575,31 +1575,6 @@ QString subject = m_doc->info("Subject");
        Whether there are any documents embedded in this PDF document.
     */
     bool hasEmbeddedFiles() const;
-
-    /**
-      Gets the table of contents (TOC) of the Document.
-
-      The caller is responsible for the returned object.
-
-      In the tree the tag name is the 'screen' name of the entry. A tag can have
-      attributes. Here follows the list of tag attributes with meaning:
-      - Destination: A string description of the referred destination
-      - DestinationName: A 'named reference' to the viewport
-      - ExternalFileName: A link to a external filename
-      - Open: A bool value that tells whether the subbranch of the item is open or not
-
-      Resolving the final destination for each item can be done in the following way:
-      - first, checking for 'Destination': if not empty, then a LinkDestination
-        can be constructed straight with it
-      - as second step, if the 'DestinationName' is not empty, then the destination
-        can be resolved using linkDestination()
-
-      Note also that if 'ExternalFileName' is not emtpy, then the destination refers
-      to that document (and not to the current one).
-
-      \returns the TOC, or NULL if the Document does not have one
-    */
-    QDomDocument *toc() const;
 
     /**
        Gets the outline of the document

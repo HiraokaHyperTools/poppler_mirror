@@ -19,7 +19,7 @@
 // Copyright (C) 2009 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
-// Copyright (C) 2011, 2012, 2016 William Bader <williambader@hotmail.com>
+// Copyright (C) 2011, 2012, 2016, 2020 William Bader <williambader@hotmail.com>
 // Copyright (C) 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2012, 2013 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2013, 2017 Adrian Johnson <ajohnson@redneon.com>
@@ -694,7 +694,10 @@ private:
     {
         int n;
 
-        if (nChars <= 0) {
+        if (unlikely(nChars <= 0)) {
+            return 0;
+        }
+        if (unlikely(bufPtr >= bufEnd)) {
             return 0;
         }
         if (bufEnd - bufPtr < nChars) {
@@ -716,14 +719,14 @@ class MemStream : public BaseMemStream<const char>
 {
 public:
     MemStream(const char *bufA, Goffset startA, Goffset lengthA, Object &&dictA) : BaseMemStream(bufA, startA, lengthA, std::move(dictA)) { }
+    ~MemStream() override;
 };
 
 class AutoFreeMemStream : public BaseMemStream<char>
 {
 public:
     AutoFreeMemStream(char *bufA, Goffset startA, Goffset lengthA, Object &&dictA) : BaseMemStream(bufA, startA, lengthA, std::move(dictA)) { }
-
-    ~AutoFreeMemStream() override { gfree(buf); }
+    ~AutoFreeMemStream() override;
 };
 
 //------------------------------------------------------------------------
@@ -744,7 +747,7 @@ public:
     BaseStream *copy() override;
     Stream *makeSubStream(Goffset start, bool limitedA, Goffset lengthA, Object &&dictA) override;
     StreamKind getKind() const override { return str->getKind(); }
-    void reset() override { }
+    void reset() override;
     int getChar() override;
     int lookChar() override;
     Goffset getPos() override;
@@ -771,6 +774,7 @@ private:
     long bufMax;
     long bufLen;
     long bufPos;
+    Goffset start;
 };
 
 //------------------------------------------------------------------------

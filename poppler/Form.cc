@@ -1360,7 +1360,7 @@ FormFieldChoice::FormFieldChoice(PDFDoc *docA, Object &&aobj, const Ref refA, Fo
     if (obj1.isInt())
         topIdx = obj1.getInt();
 
-    obj1 = dict->lookup("Opt");
+    obj1 = Form::fieldLookup(dict, "Opt");
     if (obj1.isArray()) {
         numChoices = obj1.arrayGetLength();
         choices = new ChoiceOpt[numChoices];
@@ -2005,6 +2005,7 @@ Form::Form(PDFDoc *docA, Object *acroFormA)
     obj1 = acroForm->dictLookup("Fields");
     if (obj1.isArray()) {
         Array *array = obj1.getArray();
+        std::set<Ref> alreadyReadRefs;
         for (int i = 0; i < array->getLength(); i++) {
             Object obj2 = array->get(i);
             const Object &oref = array->getNF(i);
@@ -2017,6 +2018,11 @@ Form::Form(PDFDoc *docA, Object *acroFormA)
                 error(errSyntaxWarning, -1, "Reference in Fields array to an invalid or non existent object");
                 continue;
             }
+
+            if (alreadyReadRefs.find(oref.getRef()) != alreadyReadRefs.end()) {
+                continue;
+            }
+            alreadyReadRefs.insert(oref.getRef());
 
             if (numFields >= size) {
                 size += 16;

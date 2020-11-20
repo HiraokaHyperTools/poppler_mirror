@@ -42,13 +42,17 @@ if (ECM_FOUND)
     endif()
 endif()
 
-set(POPPLER_MAJOR_VERSION "0")
-set(POPPLER_MINOR_VERSION "90")
-set(POPPLER_MICRO_VERSION "1")
-set(POPPLER_VERSION "${POPPLER_MAJOR_VERSION}.${POPPLER_MINOR_VERSION}.${POPPLER_MICRO_VERSION}")
+set(POPPLER_MAJOR_VERSION "20")
+set(POPPLER_MINOR_VERSION_STRING "11")
+# We want the string version to have 08 but the integer version can't have a leading 0 since otherwise it's considered octal
+# So strip a leading 0 if found in POPPLER_MINOR_VERSION_STRING and store the result in POPPLER_MINOR_VERSION
+string(REGEX REPLACE "^0?(.+)$" "\\1" POPPLER_MINOR_VERSION "${POPPLER_MINOR_VERSION_STRING}")
+set(POPPLER_MICRO_VERSION "0")
+set(POPPLER_VERSION "${POPPLER_MAJOR_VERSION}.${POPPLER_MINOR_VERSION_STRING}.${POPPLER_MICRO_VERSION}")
 
-set (CMAKE_CXX_STANDARD 14)
-set (CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_LINK_DEPENDS_NO_SHARED TRUE)
 
 # command line switches
 option(ENABLE_UNSTABLE_API_ABI_HEADERS "Install API/ABI unstable xpdf headers." OFF)
@@ -130,6 +134,8 @@ set(TEXTOUT_WORD_LIST ON)
 # setting the minimum required versions for some components
 set(CAIRO_VERSION "1.10.0")
 set(GLIB_REQUIRED "2.41")
+set(GTK_REQUIRED "3.8")
+set(GDK_PIXBUF_REQUIRED "2.8")
 
 macro_bool_to_01(ENABLE_SPLASH HAVE_SPLASH)
 find_package(Freetype REQUIRED)
@@ -170,9 +176,10 @@ if (ENABLE_QT5)
 endif()
 
 if (ENABLE_QT6)
-  find_package(Qt6 COMPONENTS Core Gui Xml Widgets Test QUIET)
-  if (NOT (Qt6Core_FOUND AND Qt6Gui_FOUND AND Qt6Xml_FOUND AND Qt6Widgets_FOUND AND Qt6Test_FOUND))
-    message("-- Package Qt6Core or Qt6Gui or Qt6Xml or Qt6Widgets or Qt6Test not found")
+  SET(QT_NO_CREATE_VERSIONLESS_TARGETS ON)
+  find_package(Qt6 COMPONENTS Core Gui Widgets Test QUIET)
+  if (NOT (Qt6Core_FOUND AND Qt6Gui_FOUND AND Qt6Widgets_FOUND AND Qt6Test_FOUND))
+    message("-- Package Qt6Core or Qt6Gui or Qt6Widgets or Qt6Test not found")
     set(ENABLE_QT6 OFF)
   endif()
 endif()
@@ -204,6 +211,22 @@ else()
   set(CAIRO_FEATURE "#undef POPPLER_HAS_CAIRO")
   set(ENABLE_GLIB OFF)
 endif()
+
+# GTK API docs require both the gtk-doc package & python3 support
+if(ENABLE_GTK_DOC)
+  # Stop the build & raise an error if the package is missing
+  find_package(GtkDoc)
+  if(NOT GtkDoc_FOUND)
+    message(FATAL_ERROR "Install the gtk-doc package to generate GTK API documentation, or set ENABLE_GTK_DOC to Off.")
+  endif()
+  # NOTE: The FindPythonInterp module is deprecated, but the newer FindPython3 module requires CMake >=3.12
+  find_package(PythonInterp 3)
+  # Also bail out with an error if Python3 is missing
+  if(NOT PYTHONINTERP_FOUND)
+    message(FATAL_ERROR "Install python3 in order to generate GTK API documentation, or set ENABLE_GTK_DOC to Off.")
+  endif()
+endif()
+
 if(ENABLE_CPP)
   macro_optional_find_package(Iconv)
   set(ENABLE_CPP ${ICONV_FOUND})
@@ -276,10 +299,6 @@ include_directories(
   ${FREETYPE_INCLUDE_DIRS}
 )
 
-if(ENABLE_ZLIB)
-  include_directories(SYSTEM ${ZLIB_INCLUDE_DIR})
-endif()
-
 if (NSS3_FOUND)
   set(ENABLE_NSS3 ON)
 endif()
@@ -287,11 +306,9 @@ if(JPEG_FOUND)
   include_directories(SYSTEM ${JPEG_INCLUDE_DIR})
 endif()
 if(PNG_FOUND)
-  include_directories(SYSTEM ${PNG_INCLUDE_DIR})
   set(ENABLE_LIBPNG ON)
 endif()
 if(TIFF_FOUND)
-  include_directories(SYSTEM ${TIFF_INCLUDE_DIR})
   set(ENABLE_LIBTIFF ON)
 endif()
 if(OpenJPEG_FOUND)
@@ -397,6 +414,7 @@ set(poppler_SRCS
   poppler/PageTransition.cc
   poppler/Parser.cc
   poppler/PDFDoc.cc
+  poppler/PDFDocBuilder.cc
   poppler/PDFDocEncoding.cc
   poppler/PDFDocFactory.cc
   poppler/ProfileData.cc
@@ -460,7 +478,7 @@ if(ENABLE_ZLIB)
   set(poppler_SRCS ${poppler_SRCS}
     poppler/FlateEncoder.cc
   )
-  set(poppler_LIBS ${poppler_LIBS} ${ZLIB_LIBRARIES})
+  set(poppler_LIBS ${poppler_LIBS} ZLIB::ZLIB)
 endif()
 if(ENABLE_ZLIB_UNCOMPRESS)
   set(poppler_SRCS ${poppler_SRCS}
@@ -509,10 +527,10 @@ if(WIN32)
   set(poppler_LIBS ${poppler_LIBS} gdi32)
 endif()
 if(PNG_FOUND)
-  set(poppler_LIBS ${poppler_LIBS} ${PNG_LIBRARIES})
+  set(poppler_LIBS ${poppler_LIBS} PNG::PNG)
 endif()
 if(TIFF_FOUND)
-  set(poppler_LIBS ${poppler_LIBS} ${TIFF_LIBRARIES})
+  set(poppler_LIBS ${poppler_LIBS} TIFF::TIFF)
 endif()
 set(poppler_LIBS ${poppler_LIBS} 
   libopenjp2.a 
@@ -585,7 +603,7 @@ add_library(poppler STATIC ${poppler_SRCS})
 else()
 add_library(poppler STATIC ${poppler_SRCS})
 endif()
-set_target_properties(poppler PROPERTIES VERSION 101.0.0 SOVERSION 101)
+set_target_properties(poppler PROPERTIES VERSION 104.0.0 SOVERSION 104)
 if(MINGW AND BUILD_SHARED_LIBS)
     get_target_property(POPPLER_SOVERSION poppler SOVERSION)
     set_target_properties(poppler PROPERTIES SUFFIX "-${POPPLER_SOVERSION}${CMAKE_STATIC_LIBRARY_SUFFIX}")

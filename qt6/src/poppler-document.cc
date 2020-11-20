@@ -13,7 +13,7 @@
  * Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2017 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
- * Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  * Copyright (C) 2019 Alexander Volkov <a.volkov@rusbitech.ru>
  * Copyright (C) 2020 Philipp Knechtges <philipp-dev@knechtges.com>
  *
@@ -571,23 +571,6 @@ bool Document::hasEmbeddedFiles() const
     return (!(0 == m_doc->doc->getCatalog()->numEmbeddedFiles()));
 }
 
-QDomDocument *Document::toc() const
-{
-    Outline *outline = m_doc->doc->getOutline();
-    if (!outline)
-        return nullptr;
-
-    const std::vector<::OutlineItem *> *items = outline->getItems();
-    if (!items || items->size() < 1)
-        return nullptr;
-
-    QDomDocument *toc = new QDomDocument();
-    if (items->size() > 0)
-        m_doc->addTocChildren(toc, toc, items);
-
-    return toc;
-}
-
 QVector<OutlineItem> Document::outline() const
 {
     QVector<OutlineItem> result;
@@ -674,7 +657,7 @@ QColor Document::paperColor() const
 void Document::setRenderBackend(Document::RenderBackend backend)
 {
     // no need to delete the outputdev as for the moment we always create a splash one
-    // as the arthur one does not allow "precaching" due to it's signature
+    // as the QPainter one does not allow "precaching" due to its signature
     // delete m_doc->m_outputDev;
     // m_doc->m_outputDev = NULL;
     m_doc->m_backend = backend;
@@ -691,7 +674,7 @@ QSet<Document::RenderBackend> Document::availableRenderBackends()
 #if defined(HAVE_SPLASH)
     ret << Document::SplashBackend;
 #endif
-    ret << Document::ArthurBackend;
+    ret << Document::QPainterBackend;
     return ret;
 }
 

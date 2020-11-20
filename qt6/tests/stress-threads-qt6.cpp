@@ -34,12 +34,11 @@ class CrazyThread : public QThread
 {
     Q_OBJECT
 public:
-    CrazyThread(uint seed, Poppler::Document *document, QMutex *annotationMutex, QObject *parent = nullptr);
+    CrazyThread(Poppler::Document *document, QMutex *annotationMutex, QObject *parent = nullptr);
 
     void run() override;
 
 private:
-    uint m_seed;
     Poppler::Document *m_document;
     QMutex *m_annotationMutex;
 };
@@ -86,7 +85,7 @@ void SillyThread::run()
     }
 }
 
-CrazyThread::CrazyThread(uint seed, Poppler::Document *document, QMutex *annotationMutex, QObject *parent) : QThread(parent), m_seed(seed), m_document(document), m_annotationMutex(annotationMutex) { }
+CrazyThread::CrazyThread(Poppler::Document *document, QMutex *annotationMutex, QObject *parent) : QThread(parent), m_document(document), m_annotationMutex(annotationMutex) { }
 
 void CrazyThread::run()
 {
@@ -182,11 +181,13 @@ void CrazyThread::run()
                 if (!annotations.isEmpty()) {
                     qDebug() << "modify annotation...";
 
-                    annotations.at(QRandomGenerator::global()->bounded(annotations.size()))->setBoundary(QRectF(0.5, 0.5, 0.25, 0.25));
-                    annotations.at(QRandomGenerator::global()->bounded(annotations.size()))->setAuthor(QStringLiteral("foo"));
-                    annotations.at(QRandomGenerator::global()->bounded(annotations.size()))->setContents(QStringLiteral("bar"));
-                    annotations.at(QRandomGenerator::global()->bounded(annotations.size()))->setCreationDate(QDateTime::currentDateTime());
-                    annotations.at(QRandomGenerator::global()->bounded(annotations.size()))->setModificationDate(QDateTime::currentDateTime());
+                    // size is now a qsizetype which confuses bounded(), pretend we will never have that many annotations anyway
+                    const quint32 annotationsSize = annotations.size();
+                    annotations.at(QRandomGenerator::global()->bounded(annotationsSize))->setBoundary(QRectF(0.5, 0.5, 0.25, 0.25));
+                    annotations.at(QRandomGenerator::global()->bounded(annotationsSize))->setAuthor(QStringLiteral("foo"));
+                    annotations.at(QRandomGenerator::global()->bounded(annotationsSize))->setContents(QStringLiteral("bar"));
+                    annotations.at(QRandomGenerator::global()->bounded(annotationsSize))->setCreationDate(QDateTime::currentDateTime());
+                    annotations.at(QRandomGenerator::global()->bounded(annotationsSize))->setModificationDate(QDateTime::currentDateTime());
                 }
 
                 qDeleteAll(annotations);
@@ -208,7 +209,9 @@ void CrazyThread::run()
                 if (!annotations.isEmpty()) {
                     qDebug() << "remove annotation...";
 
-                    page->removeAnnotation(annotations.takeAt(QRandomGenerator::global()->bounded(annotations.size())));
+                    // size is now a qsizetype which confuses bounded(), pretend we will never have that many annotations anyway
+                    const quint32 annotationsSize = annotations.size();
+                    page->removeAnnotation(annotations.takeAt(QRandomGenerator::global()->bounded(annotationsSize)));
                 }
 
                 qDeleteAll(annotations);
@@ -260,7 +263,7 @@ int main(int argc, char **argv)
         QMutex *annotationMutex = new QMutex();
 
         for (int i = 0; i < crazyCount; ++i) {
-            (new CrazyThread(QRandomGenerator::global()->generate(), document, annotationMutex))->start();
+            (new CrazyThread(document, annotationMutex))->start();
         }
     }
 
