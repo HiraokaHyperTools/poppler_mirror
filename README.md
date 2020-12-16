@@ -1,5 +1,7 @@
 # poppler 自炊につきまして
 
+[![Build Status](https://dev.azure.com/HiraokaHyperTools/poppler/_apis/build/status/HiraokaHyperTools.poppler_mirror?branchName=dev-ng)](https://dev.azure.com/HiraokaHyperTools/poppler/_build/latest?definitionId=4&branchName=dev-ng)
+
 Windows でのみ有用です。
 MSYS2 を使用します。
 
@@ -21,7 +23,7 @@ make
 
 ## 手始めに環境構築から
 
-https://www.msys2.org/ にて `msys2-i686-20161025.exe` をダウンロードしてセットアップします。
+https://www.msys2.org/ にて `msys2-i686-20200517.exe` をダウンロードしてセットアップします。
 
 ### MinGW 環境構築
 
@@ -270,3 +272,5 @@ $ nm /mingw32/lib/libopenjp2.notdll.a  | grep "opj_decode"
          U _opj_decode
          U _opj_decode_tile_data
 ```
+
+シンボルの型: [nm(1) manページ](https://nxmnpg.lemoda.net/ja/1/nm)
