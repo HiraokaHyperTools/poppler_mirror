@@ -1387,9 +1387,16 @@ GfxColorSpace *GfxLabColorSpace::parse(Array *arr, GfxState *state)
         return nullptr;
     }
 
-    cs->kr = 1 / (xyzrgb[0][0] * cs->whiteX + xyzrgb[0][1] * cs->whiteY + xyzrgb[0][2] * cs->whiteZ);
-    cs->kg = 1 / (xyzrgb[1][0] * cs->whiteX + xyzrgb[1][1] * cs->whiteY + xyzrgb[1][2] * cs->whiteZ);
-    cs->kb = 1 / (xyzrgb[2][0] * cs->whiteX + xyzrgb[2][1] * cs->whiteY + xyzrgb[2][2] * cs->whiteZ);
+    const auto krDenominator = (xyzrgb[0][0] * cs->whiteX + xyzrgb[0][1] * cs->whiteY + xyzrgb[0][2] * cs->whiteZ);
+    const auto kgDenominator = (xyzrgb[1][0] * cs->whiteX + xyzrgb[1][1] * cs->whiteY + xyzrgb[1][2] * cs->whiteZ);
+    const auto kbDenominator = (xyzrgb[2][0] * cs->whiteX + xyzrgb[2][1] * cs->whiteY + xyzrgb[2][2] * cs->whiteZ);
+    if (unlikely(krDenominator == 0 || kgDenominator == 0 || kbDenominator == 0)) {
+        delete cs;
+        return nullptr;
+    }
+    cs->kr = 1 / krDenominator;
+    cs->kg = 1 / kgDenominator;
+    cs->kb = 1 / kbDenominator;
 
 #ifdef USE_CMS
     cs->transform = (state != nullptr) ? state->getXYZ2DisplayTransform() : nullptr;
@@ -1614,6 +1621,7 @@ GfxColorSpace *GfxICCBasedColorSpace::copy() const
         cs->rangeMax[i] = rangeMax[i];
     }
 #ifdef USE_CMS
+    cs->profile = profile;
     cs->transform = transform;
     cs->lineTransform = lineTransform;
 #endif
@@ -3596,19 +3604,22 @@ GfxShading *GfxFunctionShading::copy() const
 void GfxFunctionShading::getColor(double x, double y, GfxColor *color) const
 {
     double in[2], out[gfxColorMaxComps];
-    int i;
 
     // NB: there can be one function with n outputs or n functions with
     // one output each (where n = number of color components)
-    for (i = 0; i < gfxColorMaxComps; ++i) {
-        out[i] = 0;
+    for (double &i : out) {
+        i = 0;
     }
     in[0] = x;
     in[1] = y;
-    for (i = 0; i < getNFuncs(); ++i) {
-        funcs[i]->transform(in, &out[i]);
+    for (int i = 0; i < getNFuncs(); ++i) {
+        if (likely(funcs[i]->getInputSize() <= 2)) {
+            funcs[i]->transform(in, &out[i]);
+        } else {
+            error(errSyntaxWarning, -1, "GfxFunctionShading::getColor: function with input size > 2");
+        }
     }
-    for (i = 0; i < gfxColorMaxComps; ++i) {
+    for (int i = 0; i < gfxColorMaxComps; ++i) {
         color->c[i] = dblToCol(out[i]);
     }
 }

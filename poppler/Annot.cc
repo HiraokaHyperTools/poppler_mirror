@@ -40,7 +40,7 @@
 // Copyright 2018 Andre Heinecke <aheinecke@intevation.de>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2018 Dileep Sankhla <sankhla.dileep96@gmail.com>
-// Copyright (C) 2018, 2019 Tobias Deiminger <haxtibal@posteo.de>
+// Copyright (C) 2018-2020 Tobias Deiminger <haxtibal@posteo.de>
 // Copyright (C) 2018-2020 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2019 Umang Malik <umang99m@gmail.com>
 // Copyright (C) 2019 João Netto <joaonetto901@gmail.com>
@@ -586,20 +586,14 @@ AnnotBorderBS::AnnotBorderBS() { }
 
 AnnotBorderBS::AnnotBorderBS(Dict *dict)
 {
-    Object obj1, obj2;
+    // Border width (in points)
+    Object obj1 = dict->lookup("W");
+    width = obj1.getNumWithDefaultValue(1.0);
 
-    // acroread 8 seems to need both W and S entries for
-    // any border to be drawn, even though the spec
-    // doesn't claim anything of that sort. We follow
-    // that behaviour by verifying both entries exist
-    // otherwise we set the borderWidth to 0
-    // --jrmuizel
-    obj1 = dict->lookup("W");
-    obj2 = dict->lookup("S");
-    if (obj1.isNum() && obj2.isName()) {
-        const char *styleName = obj2.getName();
-
-        width = obj1.getNum();
+    // Border style
+    obj1 = dict->lookup("S");
+    if (obj1.isName()) {
+        const char *styleName = obj1.getName();
 
         if (!strcmp(styleName, "S")) {
             style = borderSolid;
@@ -615,9 +609,10 @@ AnnotBorderBS::AnnotBorderBS(Dict *dict)
             style = borderSolid;
         }
     } else {
-        width = 0;
+        style = borderSolid;
     }
 
+    // Border dash style
     if (style == borderDashed) {
         obj1 = dict->lookup("D");
         if (obj1.isArray())
@@ -1630,12 +1625,29 @@ void AnnotAppearanceBuilder::setLineStyleForBorder(const AnnotBorder *border)
 // If <fill> is true, the circle is filled; otherwise it is stroked.
 void AnnotAppearanceBuilder::drawCircle(double cx, double cy, double r, bool fill)
 {
-    appearBuf->appendf("{0:.2f} {1:.2f} m\n", cx + r, cy);
-    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx + r, cy + bezierCircle * r, cx + bezierCircle * r, cy + r, cx, cy + r);
-    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx - bezierCircle * r, cy + r, cx - r, cy + bezierCircle * r, cx - r, cy);
-    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx - r, cy - bezierCircle * r, cx - bezierCircle * r, cy - r, cx, cy - r);
-    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx + bezierCircle * r, cy - r, cx + r, cy - bezierCircle * r, cx + r, cy);
-    appearBuf->append(fill ? "f\n" : "s\n");
+    if (fill)
+        drawEllipse(cx, cy, r, r, true, false);
+    else
+        drawEllipse(cx, cy, r, r, false, true);
+}
+
+// Draw an (approximate) ellipse of radius <rx> on x-axis and <ry> on y-axis, centered at (<cx>, <cy>).
+// If <fill> is true, the ellipse is filled with current color for non-stroking operations.
+// If <stroke> is true, the ellipse path ist stroked with current color and color space for stroking operations.
+// Path will be closed if either fill or stroke is true; otherwise it's left open.
+void AnnotAppearanceBuilder::drawEllipse(double cx, double cy, double rx, double ry, bool fill, bool stroke)
+{
+    appearBuf->appendf("{0:.2f} {1:.2f} m\n", cx + rx, cy);
+    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx + rx, cy + bezierCircle * ry, cx + bezierCircle * rx, cy + ry, cx, cy + ry);
+    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx - bezierCircle * rx, cy + ry, cx - rx, cy + bezierCircle * ry, cx - rx, cy);
+    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx - rx, cy - bezierCircle * ry, cx - bezierCircle * rx, cy - ry, cx, cy - ry);
+    appearBuf->appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", cx + bezierCircle * rx, cy - ry, cx + rx, cy - bezierCircle * ry, cx + rx, cy);
+    if (!fill && stroke)
+        appearBuf->append("s\n");
+    else if (fill && !stroke)
+        appearBuf->append("f\n");
+    else if (fill && stroke)
+        appearBuf->append("b\n");
 }
 
 // Draw the top-left half of an (approximate) circle of radius <r>
@@ -3545,6 +3557,32 @@ void AnnotTextMarkup::setQuadrilaterals(AnnotQuadrilaterals *quadPoints)
     invalidateAppearance();
 }
 
+bool AnnotTextMarkup::shouldCreateApperance(Gfx *gfx) const
+{
+    if (appearance.isNull())
+        return true;
+
+    // Adobe Reader seems to have a complex condition for when to use the
+    // appearance stream of typeHighlight, which is "use it if it has a Resources dictionary with ExtGState"
+    // this is reverse engineering of me editing a file by hand and checking what it does so the real
+    // condition may be more or less complex
+    if (type == typeHighlight) {
+        XRef *xref = gfx->getXRef();
+        const Object fetchedApperance = appearance.fetch(xref);
+        if (fetchedApperance.isStream()) {
+            const Object resources = fetchedApperance.streamGetDict()->lookup("Resources");
+            if (resources.isDict()) {
+                if (resources.dictLookup("ExtGState").isDict()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
 void AnnotTextMarkup::draw(Gfx *gfx, bool printing)
 {
     double ca = 1;
@@ -3554,7 +3592,7 @@ void AnnotTextMarkup::draw(Gfx *gfx, bool printing)
         return;
 
     annotLocker();
-    if (appearance.isNull() || type == typeHighlight) {
+    if (shouldCreateApperance(gfx)) {
         bool blendMultiply = true;
         ca = opacity;
 
@@ -5331,6 +5369,7 @@ void AnnotGeometry::draw(Gfx *gfx, bool printing)
 
     annotLocker();
     if (appearance.isNull()) {
+        const bool fill = interiorColor && interiorColor->getSpace() != AnnotColor::colorTransparent;
         ca = opacity;
 
         AnnotAppearanceBuilder appearBuilder;
@@ -5346,55 +5385,21 @@ void AnnotGeometry::draw(Gfx *gfx, bool printing)
 
         if (type == typeSquare) {
             appearBuilder.appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} re\n", borderWidth / 2.0, borderWidth / 2.0, (rect->x2 - rect->x1) - borderWidth, (rect->y2 - rect->y1) - borderWidth);
+            if (fill) {
+                if (borderWidth > 0) {
+                    appearBuilder.append("b\n");
+                } else {
+                    appearBuilder.append("f\n");
+                }
+            } else if (borderWidth > 0) {
+                appearBuilder.append("S\n");
+            }
         } else {
-            double width, height;
-            double b;
-            double x1, y1, x2, y2, x3, y3;
-
-            width = rect->x2 - rect->x1;
-            height = rect->y2 - rect->y1;
-            b = borderWidth / 2.0;
-
-            x1 = b;
-            y1 = height / 2.0;
-            appearBuilder.appendf("{0:.2f} {1:.2f} m\n", x1, y1);
-
-            y1 += height / 4.0;
-            x2 = width / 4.0;
-            y2 = height - b;
-            x3 = width / 2.0;
-            y3 = y2;
-            appearBuilder.appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", x1, y1, x2, y2, x3, y3);
-            x2 = width - b;
-            y2 = y1;
-            x1 = x3 + (width / 4.0);
-            y1 = y3;
-            x3 = x2;
-            y3 = height / 2.0;
-            appearBuilder.appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", x1, y1, x2, y2, x3, y3);
-
-            x2 = x1;
-            y2 = b;
-            x1 = x3;
-            y1 = height / 4.0;
-            x3 = width / 2.0;
-            y3 = b;
-            appearBuilder.appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", x1, y1, x2, y2, x3, y3);
-
-            x2 = b;
-            y2 = y1;
-            x1 = width / 4.0;
-            y1 = b;
-            x3 = b;
-            y3 = height / 2.0;
-            appearBuilder.appendf("{0:.2f} {1:.2f} {2:.2f} {3:.2f} {4:.2f} {5:.2f} c\n", x1, y1, x2, y2, x3, y3);
+            const double rx { (rect->x2 - rect->x1) / 2. };
+            const double ry { (rect->y2 - rect->y1) / 2. };
+            const double bwHalf { borderWidth / 2.0 };
+            appearBuilder.drawEllipse(rx, ry, rx - bwHalf, ry - bwHalf, fill, borderWidth > 0);
         }
-
-        if (interiorColor && interiorColor->getSpace() != AnnotColor::colorTransparent)
-            appearBuilder.append("b\n");
-        else
-            appearBuilder.append("S\n");
-
         appearBuilder.append("Q\n");
 
         double bbox[4];
@@ -5711,9 +5716,14 @@ void AnnotPolygon::draw(Gfx *gfx, bool printing)
                     appearBBox->extendTo(vertices->getX(i) - rect->x1, vertices->getY(i) - rect->y1);
                 }
 
+                const double borderWidth = border->getWidth();
                 if (interiorColor && interiorColor->getSpace() != AnnotColor::colorTransparent) {
-                    appearBuilder.append("b\n");
-                } else {
+                    if (borderWidth > 0) {
+                        appearBuilder.append("b\n");
+                    } else {
+                        appearBuilder.append("f\n");
+                    }
+                } else if (borderWidth > 0) {
                     appearBuilder.append("s\n");
                 }
             }

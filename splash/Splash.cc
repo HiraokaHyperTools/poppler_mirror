@@ -1971,11 +1971,11 @@ void Splash::strokeNarrow(SplashPath *path)
                 dxdy = seg->dxdy;
                 if (y0 < state->clip->getYMinI()) {
                     y0 = state->clip->getYMinI();
-                    x0 = splashFloor(seg->x0 + ((SplashCoord)y0 - seg->y0) * dxdy);
+                    x0 = splashFloor(seg->x0 + (state->clip->getYMin() - seg->y0) * dxdy);
                 }
                 if (y1 > state->clip->getYMaxI()) {
                     y1 = state->clip->getYMaxI();
-                    x1 = splashFloor(seg->x0 + ((SplashCoord)y1 - seg->y0) * dxdy);
+                    x1 = splashFloor(seg->x0 + (state->clip->getYMax() - seg->y0) * dxdy);
                 }
                 if (x0 <= x1) {
                     xa = x0;
@@ -2828,6 +2828,14 @@ void Splash::arbitraryTransformMask(SplashImageMaskSource src, void *srcData, in
     vy[2] = mat[1] + mat[3] + mat[5];
     vx[3] = mat[0] + mat[4];
     vy[3] = mat[1] + mat[5];
+
+    // make sure vx/vy fit in integers since we're transforming them to in the next lines
+    for (i = 0; i < 4; ++i) {
+        if (unlikely(vx[i] < INT_MIN || vx[i] > INT_MAX || vy[i] < INT_MIN || vy[i] > INT_MAX)) {
+            error(errInternal, -1, "arbitraryTransformMask vertices values don't fit in an integer");
+            return;
+        }
+    }
 
     // clipping
     xMin = imgCoordMungeLowerC(vx[0], glyphMode);

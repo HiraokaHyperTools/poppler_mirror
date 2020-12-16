@@ -15,8 +15,6 @@ include(PopplerDefaults)
 include(PopplerMacros)
 include(MacroOptionalFindPackage)
 find_package(PkgConfig)
-include(MacroEnsureVersion)
-include(MacroBoolTo01)
 if (WIN32)
   message("-- Using win32 threads")
 else()
@@ -43,11 +41,11 @@ if (ECM_FOUND)
 endif()
 
 set(POPPLER_MAJOR_VERSION "20")
-set(POPPLER_MINOR_VERSION_STRING "11")
+set(POPPLER_MINOR_VERSION_STRING "12")
 # We want the string version to have 08 but the integer version can't have a leading 0 since otherwise it's considered octal
 # So strip a leading 0 if found in POPPLER_MINOR_VERSION_STRING and store the result in POPPLER_MINOR_VERSION
 string(REGEX REPLACE "^0?(.+)$" "\\1" POPPLER_MINOR_VERSION "${POPPLER_MINOR_VERSION_STRING}")
-set(POPPLER_MICRO_VERSION "0")
+set(POPPLER_MICRO_VERSION "1")
 set(POPPLER_VERSION "${POPPLER_MAJOR_VERSION}.${POPPLER_MINOR_VERSION_STRING}.${POPPLER_MICRO_VERSION}")
 
 set(CMAKE_CXX_STANDARD 14)
@@ -137,7 +135,6 @@ set(GLIB_REQUIRED "2.41")
 set(GTK_REQUIRED "3.8")
 set(GDK_PIXBUF_REQUIRED "2.8")
 
-macro_bool_to_01(ENABLE_SPLASH HAVE_SPLASH)
 find_package(Freetype REQUIRED)
 if(WITH_FONTCONFIGURATION_FONTCONFIG)
   find_package(Fontconfig REQUIRED)
@@ -184,7 +181,17 @@ if (ENABLE_QT6)
   endif()
 endif()
 
+# Check for rendering backends (Splash included unless disabled)
+set(HAVE_SPLASH ${ENABLE_SPLASH})
 macro_optional_find_package(Cairo ${CAIRO_VERSION})
+
+if(ENABLE_SPLASH)
+  find_package(Boost 1.58.0)
+  if(Boost_FOUND)
+    set(USE_BOOST_HEADERS ON)
+  endif()
+endif()
+
 if(CAIRO_FOUND)
   set(HAVE_CAIRO ${CAIRO_FOUND})
   set(CAIRO_FEATURE "#define POPPLER_HAS_CAIRO 1")
@@ -316,14 +323,6 @@ if(OpenJPEG_FOUND)
 endif()
 if(LCMS2_FOUND)
   include_directories(SYSTEM ${LCMS2_INCLUDE_DIR})
-endif()
-
-if(ENABLE_SPLASH)
-  find_package(Boost 1.58.0)
-  if(Boost_FOUND)
-    include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
-    set(USE_BOOST_HEADERS ON)
-  endif()
 endif()
 
 # Recent versions of poppler-data install a .pc file.
@@ -532,6 +531,10 @@ endif()
 if(TIFF_FOUND)
   set(poppler_LIBS ${poppler_LIBS} TIFF::TIFF)
 endif()
+if(Boost_FOUND)
+  set(poppler_LIBS ${poppler_LIBS} Boost::boost)
+endif()
+
 set(poppler_LIBS ${poppler_LIBS} 
   libopenjp2.a 
   libzstd.a
@@ -559,7 +562,7 @@ set(poppler_LIBS ${poppler_LIBS}
   libiconv.a
   libz.a
   libjpeg.a
-  # „Åì„Å°„Çâ„Å∏
+  # Ç±ÇøÇÁÇ÷
 )
 
 if (GPERF AND RUN_GPERF_IF_PRESENT)
@@ -604,7 +607,7 @@ add_library(poppler STATIC ${poppler_SRCS})
 else()
 add_library(poppler STATIC ${poppler_SRCS})
 endif()
-set_target_properties(poppler PROPERTIES VERSION 104.0.0 SOVERSION 104)
+set_target_properties(poppler PROPERTIES VERSION 105.0.0 SOVERSION 105)
 if(MINGW AND BUILD_SHARED_LIBS)
     get_target_property(POPPLER_SOVERSION poppler SOVERSION)
     set_target_properties(poppler PROPERTIES SUFFIX "-${POPPLER_SOVERSION}${CMAKE_STATIC_LIBRARY_SUFFIX}")
@@ -795,32 +798,17 @@ if(ENABLE_CPP)
   add_subdirectory(cpp)
 endif()
 
-set(PKG_CONFIG_VERSION_0_18 TRUE)
-if(PKG_CONFIG_EXECUTABLE)
-  exec_program(${PKG_CONFIG_EXECUTABLE} ARGS --version RETURN_VALUE _return_VALUE OUTPUT_VARIABLE _output_VAR)
-  macro_ensure_version("0.18" "${_output_VAR}" PKG_CONFIG_VERSION_0_18)
-endif()
-if(PKG_CONFIG_VERSION_0_18)
-  set(PC_REQUIRES "")
-  set(PC_REQUIRES_PRIVATE "Requires.private: poppler = ${POPPLER_VERSION}")
-else()
-  set(PC_REQUIRES "poppler = ${POPPLER_VERSION}")
-  set(PC_REQUIRES_PRIVATE "")
-endif()
+# Configure "Requires" field & install .pc files for packagers
+set(PC_REQUIRES "")
+set(PC_REQUIRES_PRIVATE "Requires.private: poppler = ${POPPLER_VERSION}")
 
 if(PKG_CONFIG_EXECUTABLE)
   poppler_create_install_pkgconfig(poppler.pc ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-  if(ENABLE_SPLASH)
-    poppler_create_install_pkgconfig(poppler-splash.pc ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-  endif()
   if(ENABLE_QT5)
     poppler_create_install_pkgconfig(poppler-qt5.pc ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
   endif()
   if(ENABLE_GLIB)
     poppler_create_install_pkgconfig(poppler-glib.pc ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-  endif()
-  if(CAIRO_FOUND)
-    poppler_create_install_pkgconfig(poppler-cairo.pc ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
   endif()
   if(ENABLE_CPP)
     poppler_create_install_pkgconfig(poppler-cpp.pc ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
@@ -829,6 +817,7 @@ else()
   MESSAGE(STATUS ".pc files will not be installed becasue of missing 'pkg-config'!")
 endif()
 
+# Summarize build options & display warnings for user
 message("Building Poppler with support for:")
 show_end_message("font configuration" ${font_configuration})
 show_end_message_yesno("splash output" ENABLE_SPLASH)

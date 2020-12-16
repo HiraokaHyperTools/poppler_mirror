@@ -38,8 +38,8 @@ clang_format:
 build:
   stage: build
   script:
-    - wget -r -l1 -np "http://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_600/qt.qt6.600.gcc_64/" -A "6.0.0-0-*qtbase-Linux-RHEL_7_6-GCC-Linux-RHEL_7_6-X86_64.7z"
-    - 7z x download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_600/qt.qt6.600.gcc_64/6.0.0-0-*qtbase-Linux-RHEL_7_6-GCC-Linux-RHEL_7_6-X86_64.7z
+    - wget -r -l1 -np "http://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_600/qt.qt6.600.gcc_64/" -A "6.0.0-0-*qtbase-Linux-CentOS_8_1-GCC-Linux-CentOS_8_1-X86_64.7z"
+    - 7z x download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_600/qt.qt6.600.gcc_64/6.0.0-0-*qtbase-Linux-CentOS_8_1-GCC-Linux-CentOS_8_1-X86_64.7z
     - wget -r -l1 -np "http://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_600/qt.qt6.600.gcc_64/" -A "6.0.0-0-*icu-linux-Rhel7.2-x64.7z"
     - 7z x download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_600/qt.qt6.600.gcc_64/6.0.0-0-*icu-linux-Rhel7.2-x64.7z
     - git clone --branch ${CI_COMMIT_REF_NAME} --depth 1 ${TEST_DATA_URL} test-data || git clone --depth 1 ${UPSTREAM_TEST_DATA_URL} test-data
@@ -53,7 +53,7 @@ build_clang_libcpp:
   script:
     - git clone --branch ${CI_COMMIT_REF_NAME} --depth 1 ${TEST_DATA_URL} test-data || git clone --depth 1 ${UPSTREAM_TEST_DATA_URL} test-data
     - mkdir -p build && cd build
-    - CC=clang CXX=clang++ cmake -G Ninja -DCMAKE_CXX_FLAGS=-stdlib=libc++ -DTESTDATADIR=$PWD/../test-data -DCMAKE_CXX_CLANG_TIDY="clang-tidy;-header-filter=.;-checks=-*,performance-*,bugprone-*,readability-inconsistent-declaration-parameter-name,readability-string-compare,modernize-deprecated-headers,modernize-make-unique,modernize-make-shared,modernize-use-override,modernize-use-equals-delete,modernize-use-emplace,modernize-use-bool-literals,modernize-redundant-void-arg,modernize-loop-convert,-bugprone-narrowing-conversions,-bugprone-macro-parentheses,-bugprone-suspicious-string-compare,-bugprone-incorrect-roundings,-bugprone-undefined-memory-manipulation,-bugprone-sizeof-expression,-bugprone-branch-clone;-warnings-as-errors=*" ..
+    - CC=clang CXX=clang++ cmake -G Ninja -DCMAKE_CXX_FLAGS=-stdlib=libc++ -DTESTDATADIR=$PWD/../test-data -DCMAKE_CXX_CLANG_TIDY="clang-tidy;-header-filter=.;-checks=-*,performance-*,bugprone-*,readability-inconsistent-declaration-parameter-name,readability-string-compare,modernize-deprecated-headers,modernize-make-unique,modernize-make-shared,modernize-use-override,modernize-use-equals-delete,modernize-use-emplace,modernize-use-bool-literals,modernize-redundant-void-arg,modernize-loop-convert,-bugprone-narrowing-conversions,-bugprone-macro-parentheses,-bugprone-suspicious-string-compare,-bugprone-incorrect-roundings,-bugprone-undefined-memory-manipulation,-bugprone-sizeof-expression,-bugprone-branch-clone,-bugprone-reserved-identifier,-bugprone-signed-char-misuse,-bugprone-suspicious-include;-warnings-as-errors=*" ..
     - ninja
     - ctest --output-on-failure
 
