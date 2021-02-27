@@ -34,7 +34,7 @@
 // Copyright (C) 2015 Li Junling <lijunling@sina.com>
 // Copyright (C) 2015 André Guerreiro <aguerreiro1985@gmail.com>
 // Copyright (C) 2015 André Esser <bepandre@hotmail.com>
-// Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
+// Copyright (C) 2016, 2020 Jakub Alba <jakubalba@gmail.com>
 // Copyright (C) 2017 Jean Ghali <jghali@libertysurf.fr>
 // Copyright (C) 2017 Fredrik Fornwall <fredrik@fornwall.net>
 // Copyright (C) 2018 Ben Timby <btimby@gmail.com>
@@ -44,6 +44,8 @@
 // Copyright (C) 2018 Philipp Knechtges <philipp-dev@knechtges.com>
 // Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 // Copyright (C) 2020 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright (C) 2020 Thorsten Behrens <Thorsten.Behrens@CIB.de>
+// Copyright (C) 2020 Adam Sampson <ats@offog.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -252,12 +254,14 @@ bool PDFDoc::setup(const GooString *ownerPassword, const GooString *userPassword
 
     if (str->getLength() <= 0) {
         error(errSyntaxError, -1, "Document stream is empty");
+        errCode = errDamaged;
         return false;
     }
 
     str->setPos(0, -1);
     if (str->getPos() < 0) {
         error(errSyntaxError, -1, "Document base stream is not seekable");
+        errCode = errFileIO;
         return false;
     }
 
@@ -1364,6 +1368,15 @@ void PDFDoc::writeObject(Object *obj, OutStream *outStr, XRef *xRef, unsigned in
     case objString:
         writeString(obj->getString(), outStr, fileKey, encAlgorithm, keyLength, ref);
         break;
+    case objHexString: {
+        const GooString *s = obj->getHexString();
+        outStr->printf("<");
+        for (int i = 0; i < s->getLength(); i++) {
+            outStr->printf("%02x", s->getChar(i) & 0xff);
+        }
+        outStr->printf("> ");
+        break;
+    }
     case objName: {
         GooString name(obj->getName());
         GooString *nameToPrint = name.sanitizedName(false /* non ps mode */);

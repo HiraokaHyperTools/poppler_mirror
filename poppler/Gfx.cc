@@ -14,7 +14,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005 Jonathan Blandford <jrb@redhat.com>
-// Copyright (C) 2005-2013, 2015-2020 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005-2013, 2015-2021 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2006 Thorkild Stray <thorkild@ifi.uio.no>
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2006-2011 Carlos Garcia Campos <carlosgc@gnome.org>
@@ -483,7 +483,7 @@ Gfx::Gfx(PDFDoc *docA, OutputDev *outA, int pageNum, Dict *resDict, double hDPI,
     for (i = 0; i < 6; ++i) {
         baseMatrix[i] = state->getCTM()[i];
     }
-    formDepth = 0;
+    displayDepth = 0;
     ocState = true;
     parser = nullptr;
     abortCheckCbk = abortCheckCbkA;
@@ -544,7 +544,7 @@ Gfx::Gfx(PDFDoc *docA, OutputDev *outA, Dict *resDict, const PDFRectangle *box, 
     for (i = 0; i < 6; ++i) {
         baseMatrix[i] = state->getCTM()[i];
     }
-    formDepth = 0;
+    displayDepth = 0;
     ocState = true;
     parser = nullptr;
     abortCheckCbk = abortCheckCbkA;
@@ -622,10 +622,13 @@ Gfx::~Gfx()
 
 void Gfx::display(Object *obj, bool topLevel)
 {
-    int i;
+    // check for excessive recursion
+    if (displayDepth > 100) {
+        return;
+    }
 
     if (obj->isArray()) {
-        for (i = 0; i < obj->arrayGetLength(); ++i) {
+        for (int i = 0; i < obj->arrayGetLength(); ++i) {
             Object obj2 = obj->arrayGet(i);
             if (!obj2.isStream()) {
                 error(errSyntaxError, -1, "Weird page contents");
@@ -1236,11 +1239,6 @@ void Gfx::doSoftMask(Object *str, bool alpha, GfxColorSpace *blendingColorSpace,
     Object obj1;
     int i;
 
-    // check for excessive recursion
-    if (formDepth > 20) {
-        return;
-    }
-
     // get stream dict
     dict = str->streamGetDict();
 
@@ -1290,9 +1288,7 @@ void Gfx::doSoftMask(Object *str, bool alpha, GfxColorSpace *blendingColorSpace,
     resDict = obj1.isDict() ? obj1.getDict() : nullptr;
 
     // draw it
-    ++formDepth;
     drawForm(str, resDict, m, bbox, true, true, blendingColorSpace, isolated, knockout, alpha, transferFunc, backdropColor);
-    --formDepth;
 }
 
 void Gfx::opSetRenderingIntent(Object args[], int numArgs)
@@ -1314,8 +1310,9 @@ void Gfx::opSetFillGray(Object args[], int numArgs)
     if (!obj.isNull()) {
         colorSpace = GfxColorSpace::parse(res, &obj, out, state);
     }
-    if (colorSpace == nullptr) {
-        colorSpace = new GfxDeviceGrayColorSpace();
+    if (colorSpace == nullptr || colorSpace->getNComps() > 1) {
+        delete colorSpace;
+        colorSpace = state->copyDefaultGrayColorSpace();
     }
     state->setFillColorSpace(colorSpace);
     out->updateFillColorSpace(state);
@@ -1335,7 +1332,7 @@ void Gfx::opSetStrokeGray(Object args[], int numArgs)
         colorSpace = GfxColorSpace::parse(res, &obj, out, state);
     }
     if (colorSpace == nullptr) {
-        colorSpace = new GfxDeviceGrayColorSpace();
+        colorSpace = state->copyDefaultGrayColorSpace();
     }
     state->setStrokeColorSpace(colorSpace);
     out->updateStrokeColorSpace(state);
@@ -1355,7 +1352,7 @@ void Gfx::opSetFillCMYKColor(Object args[], int numArgs)
         colorSpace = GfxColorSpace::parse(res, &obj, out, state);
     }
     if (colorSpace == nullptr) {
-        colorSpace = new GfxDeviceCMYKColorSpace();
+        colorSpace = state->copyDefaultCMYKColorSpace();
     }
     state->setFillPattern(nullptr);
     state->setFillColorSpace(colorSpace);
@@ -1379,7 +1376,7 @@ void Gfx::opSetStrokeCMYKColor(Object args[], int numArgs)
         colorSpace = GfxColorSpace::parse(res, &obj, out, state);
     }
     if (colorSpace == nullptr) {
-        colorSpace = new GfxDeviceCMYKColorSpace();
+        colorSpace = state->copyDefaultCMYKColorSpace();
     }
     state->setStrokeColorSpace(colorSpace);
     out->updateStrokeColorSpace(state);
@@ -1401,8 +1398,9 @@ void Gfx::opSetFillRGBColor(Object args[], int numArgs)
     if (!obj.isNull()) {
         colorSpace = GfxColorSpace::parse(res, &obj, out, state);
     }
-    if (colorSpace == nullptr) {
-        colorSpace = new GfxDeviceRGBColorSpace();
+    if (colorSpace == nullptr || colorSpace->getNComps() > 3) {
+        delete colorSpace;
+        colorSpace = state->copyDefaultRGBColorSpace();
     }
     state->setFillColorSpace(colorSpace);
     out->updateFillColorSpace(state);
@@ -1425,7 +1423,7 @@ void Gfx::opSetStrokeRGBColor(Object args[], int numArgs)
         colorSpace = GfxColorSpace::parse(res, &obj, out, state);
     }
     if (colorSpace == nullptr) {
-        colorSpace = new GfxDeviceRGBColorSpace();
+        colorSpace = state->copyDefaultRGBColorSpace();
     }
     state->setStrokeColorSpace(colorSpace);
     out->updateStrokeColorSpace(state);
@@ -3920,7 +3918,9 @@ void Gfx::doShowText(const GooString *s)
                         }
                     }
                     if (displayCharProc) {
+                        ++displayDepth;
                         display(&charProc, false);
+                        --displayDepth;
 
                         if (refNum != -1) {
                             charProcDrawing.erase(charProcDrawingIt);
@@ -4392,11 +4392,12 @@ void Gfx::doImage(Object *ref, Stream *str, bool inlineImg)
                     obj1 = std::move(obj2);
                 }
             }
-            maskColorSpace = GfxColorSpace::parse(nullptr, &obj1, out, state);
-            if (!maskColorSpace || maskColorSpace->getMode() != csDeviceGray) {
-                delete maskColorSpace;
+            // Here, we parse manually instead of using GfxColorSpace::parse,
+            // since we explicitly need DeviceGray and not some DefaultGray color space
+            if (!obj1.isName("DeviceGray") && !obj1.isName("G")) {
                 goto err1;
             }
+            maskColorSpace = new GfxDeviceGrayColorSpace();
             obj1 = maskDict->lookup("Decode");
             if (obj1.isNull()) {
                 obj1 = maskDict->lookup("D");
@@ -4603,11 +4604,6 @@ void Gfx::doForm(Object *str)
     Object obj1;
     int i;
 
-    // check for excessive recursion
-    if (formDepth > 100) {
-        return;
-    }
-
     // get stream dict
     dict = str->streamGetDict();
 
@@ -4692,9 +4688,7 @@ void Gfx::doForm(Object *str)
     }
 
     // draw it
-    ++formDepth;
     drawForm(str, resDict, m, bbox, transpGroup, false, blendingColorSpace, isolated, knockout);
-    --formDepth;
 
     if (blendingColorSpace) {
         delete blendingColorSpace;
@@ -4763,7 +4757,9 @@ void Gfx::drawForm(Object *str, Dict *resDict, const double *matrix, const doubl
     GfxState *stateBefore = state;
 
     // draw the form
+    ++displayDepth;
     display(str, false);
+    --displayDepth;
 
     if (stateBefore != state) {
         if (state->isParentState(stateBefore)) {

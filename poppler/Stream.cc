@@ -14,7 +14,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005 Jeff Muizelaar <jeff@infidigm.net>
-// Copyright (C) 2006-2010, 2012-2014, 2016-2020 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006-2010, 2012-2014, 2016-2021 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2007 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2008 Julien Rebetez <julien@fhtagn.net>
 // Copyright (C) 2009 Carlos Garcia Campos <carlosgc@gnome.org>
@@ -24,7 +24,7 @@
 // Copyright (C) 2010 Tomas Hoger <thoger@redhat.com>
 // Copyright (C) 2011, 2012, 2016, 2020 William Bader <williambader@hotmail.com>
 // Copyright (C) 2012, 2013, 2020 Thomas Freitag <Thomas.Freitag@alfa.de>
-// Copyright (C) 2012 Oliver Sander <sander@mi.fu-berlin.de>
+// Copyright (C) 2012, 2021 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2012 Even Rouault <even.rouault@mines-paris.org>
 // Copyright (C) 2013, 2017, 2018 Adrian Johnson <ajohnson@redneon.com>
@@ -143,9 +143,38 @@ char *Stream::getLine(char *buf, int size)
     return buf;
 }
 
+unsigned int Stream::discardChars(unsigned int n)
+{
+    unsigned char buf[4096];
+    unsigned int count, i, j;
+
+    count = 0;
+    while (count < n) {
+        if ((i = n - count) > sizeof(buf)) {
+            i = (unsigned int)sizeof(buf);
+        }
+        j = (unsigned int)doGetChars((int)i, buf);
+        count += j;
+        if (j != i) {
+            break;
+        }
+    }
+    return count;
+}
+
 GooString *Stream::getPSFilter(int psLevel, const char *indent)
 {
     return new GooString();
+}
+
+static Stream *wrapEOFStream(Stream *str)
+{
+    if (dynamic_cast<EOFStream *>(str)) {
+        // str is already a EOFStream, no need to wrap it in another EOFStream
+        return str;
+    } else {
+        return new EOFStream(str);
+    }
 }
 
 Stream *Stream::addFilters(Dict *dict, int recursion)
@@ -177,7 +206,7 @@ Stream *Stream::addFilters(Dict *dict, int recursion)
                 str = makeFilter(obj2.getName(), str, &params2, recursion);
             } else {
                 error(errSyntaxError, getPos(), "Bad filter name");
-                str = new EOFStream(str);
+                str = wrapEOFStream(str);
             }
         }
     } else if (!obj.isNull()) {
@@ -319,7 +348,7 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
         str = new DCTStream(str, colorXform, dict, recursion);
 #else
         error(errSyntaxError, getPos(), "Unknown filter '{0:s}'", name);
-        str = new EOFStream(str);
+        str = wrapEOFStream(str);
 #endif
     } else if (!strcmp(name, "FlateDecode") || !strcmp(name, "Fl")) {
         pred = 1;
@@ -354,7 +383,7 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
         str = new JPXStream(str);
 #else
         error(errSyntaxError, getPos(), "Unknown filter '{0:s}'", name);
-        str = new EOFStream(str);
+        str = wrapEOFStream(str);
 #endif
     } else if (!strcmp(name, "Crypt")) {
         if (str->getKind() == strCrypt) {
@@ -364,7 +393,7 @@ Stream *Stream::makeFilter(const char *name, Stream *str, Object *params, int re
         }
     } else {
         error(errSyntaxError, getPos(), "Unknown filter '{0:s}'", name);
-        str = new EOFStream(str);
+        str = wrapEOFStream(str);
     }
     return str;
 }
@@ -1864,7 +1893,7 @@ inline void CCITTFaxStream::addPixelsNeg(int a1, int blackPixels)
         if (a1 < 0) {
             error(errSyntaxError, getPos(), "Invalid CCITTFax code");
             err = true;
-            a1 = 0;
+            a1 = columns;
         }
         while (a0i > 0 && a1 <= codingLine[a0i - 1]) {
             --a0i;
